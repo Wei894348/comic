@@ -1,0 +1,8 @@
+PyQt5>=5.15
+PyQtWebEngine>=5.15
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=4.9
+Pillow>=9.2
+pycryptodome>=3.20
+jmcomic>=2.6

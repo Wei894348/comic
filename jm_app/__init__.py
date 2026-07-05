@@ -1,0 +1,1 @@
+"""JM comic collector application."""
