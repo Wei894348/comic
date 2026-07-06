@@ -50,3 +50,4 @@ class DownloadConfig(NetworkConfig):
     pdf_split_chapters: bool = False
     keep_images: bool = True
     use_jmcomic: bool = True
+    reading_mode: str = "scroll"

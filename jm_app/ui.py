@@ -23,11 +23,12 @@ from PyQt5.QtCore import (
     QUrl,
     pyqtSignal,
 )
-from PyQt5.QtGui import QDesktopServices, QImageReader, QMovie, QPixmap
+from PyQt5.QtGui import QDesktopServices, QFontMetrics, QImageReader, QMovie, QPixmap
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QDialog,
     QFileDialog,
     QFormLayout,
@@ -64,6 +65,7 @@ from .cookie_store import load_cookie_header, save_cookie_dict
 from .jm_api import API_DOMAINS, APP_USER_AGENT, APP_VERSION, IMAGE_DOMAINS, get_latest_api_domains
 from .jmcomic_defaults import jmcomic_default_cookie_header
 from .models import AlbumMeta, ChapterMeta, DownloadConfig, NetworkConfig
+from .pdf_utils import IMAGE_SUFFIXES, collect_images
 from .utils import parse_cookie_header, split_ids
 from .workers import ChapterWorker, DownloadWorker, ReaderWorker, ScrapeWorker
 
@@ -77,18 +79,32 @@ LOADING_MOVIE_PATH = ASSETS_DIR / "loading_runner.gif"
 APP_UI_VERSION = "1.0.0"
 
 
+def elide_label_text(label: QLabel, text: str, fallback_width: int = 220) -> None:
+    full_text = text or "-"
+    width = max(40, label.width() or label.maximumWidth() or fallback_width)
+    metrics = QFontMetrics(label.font())
+    label.setText(metrics.elidedText(full_text, Qt.ElideRight, width))
+    label.setToolTip(full_text)
+
+
 class ReaderDialog(QDialog):
     def __init__(self, album: AlbumMeta, chapter: ChapterMeta, config: DownloadConfig, log_callback, parent=None):
         super().__init__(parent)
         self.album = album
         self.chapter = chapter
         self.log_callback = log_callback
-        self.worker = ReaderWorker(album, chapter, config, self)
+        self.config = config
+        self.worker: Optional[ReaderWorker] = None
+        self.stale_workers: List[ReaderWorker] = []
         self._closing = False
         self._force_close = False
         self.page_labels: Dict[int, QLabel] = {}
         self.page_pixmaps: Dict[int, QPixmap] = {}
         self.reader_total = 0
+        self.current_reader_page = 0
+        self._switching_chapter = False
+        self.reader_scale_mode = "original"
+        self.reader_mode = getattr(config, "reading_mode", "scroll") or "scroll"
         self.setWindowTitle(f"阅读 - {album.title}")
         self.setWindowFlags(
             (self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
@@ -102,19 +118,57 @@ class ReaderDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         header = QHBoxLayout()
-        title = QLabel(f"{album.title} / {chapter.title}")
-        title.setWordWrap(True)
-        title.setStyleSheet("font-weight:700;color:#1f2937;")
+        header.setSpacing(6)
+        self.chapter_combo = QComboBox()
+        self.chapter_combo.setMinimumWidth(190)
+        self.chapter_combo.setMaximumWidth(360)
+        self.chapter_combo.setMinimumContentsLength(16)
+        self.chapter_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        for item in album.chapters:
+            self.chapter_combo.addItem(f"{item.index}. {item.title}", item.chapter_id)
+        current_index = self.chapter_index(chapter.chapter_id)
+        if current_index >= 0:
+            self.chapter_combo.setCurrentIndex(current_index)
+        self.chapter_combo.currentIndexChanged.connect(self.on_chapter_combo_changed)
+        self.title_label = QLabel(album.title)
+        self.title_label.setWordWrap(False)
+        self.title_label.setMinimumWidth(120)
+        self.title_label.setMaximumWidth(320)
+        self.title_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.title_label.setToolTip(album.title)
+        self.title_label.setStyleSheet("font-weight:700;color:#1f2937;")
+        self.page_indicator = QLabel("第 0 / 0 页")
+        self.page_indicator.setMinimumWidth(92)
+        self.page_indicator.setStyleSheet("color:#334155;font-weight:700;padding:0 8px;")
+        self.scale_combo = QComboBox()
+        self.scale_combo.addItem("原始大小", "original")
+        self.scale_combo.addItem("适应宽度", "fit_width")
+        self.scale_combo.setMaximumWidth(120)
+        self.scale_combo.currentIndexChanged.connect(self.on_scale_mode_changed)
+        self.prev_page_btn = QPushButton("上一页")
+        self.prev_page_btn.clicked.connect(lambda: self.flip_reader_page(-1))
+        self.next_page_btn = QPushButton("下一页")
+        self.next_page_btn.clicked.connect(lambda: self.flip_reader_page(1))
+        self.next_chapter_btn = QPushButton("下一章")
+        self.next_chapter_btn.clicked.connect(self.open_next_chapter)
         self.progress = QProgressBar()
         self.progress.setFixedWidth(180)
-        header.addWidget(title, 1)
+        header.addWidget(self.chapter_combo)
+        header.addWidget(self.title_label, 1)
+        header.addWidget(self.page_indicator)
+        header.addWidget(self.scale_combo)
+        header.addWidget(self.prev_page_btn)
+        header.addWidget(self.next_page_btn)
+        header.addWidget(self.next_chapter_btn)
         header.addWidget(self.progress)
         layout.addLayout(header)
+        self.update_reader_header_text()
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.NoFrame)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll.verticalScrollBar().valueChanged.connect(self.update_current_reader_page)
         self.page = QWidget()
         self.page_layout = QVBoxLayout(self.page)
         self.page_layout.setContentsMargins(0, 0, 0, 0)
@@ -127,13 +181,117 @@ class ReaderDialog(QDialog):
         self.scroll.setWidget(self.page)
         layout.addWidget(self.scroll, 1)
 
-        self.worker.image_ready.connect(self.add_image)
-        self.worker.progress.connect(self.on_progress)
-        self.worker.log.connect(self.log_callback)
-        self.worker.failed.connect(self.on_failed)
-        self.worker.finished_ok.connect(self.on_finished)
-        self.worker.finished.connect(self.on_worker_finished)
-        self.worker.start()
+        self.start_reader_worker(chapter)
+        self.apply_reader_mode()
+
+    def chapter_index(self, chapter_id: str) -> int:
+        for index, item in enumerate(self.album.chapters):
+            if item.chapter_id == chapter_id:
+                return index
+        return -1
+
+    def current_chapter_index(self) -> int:
+        return self.chapter_index(self.chapter.chapter_id)
+
+    def update_reader_header_text(self):
+        elide_label_text(self.title_label, self.album.title, 260)
+        index = self.current_chapter_index()
+        if 0 <= index < len(self.album.chapters):
+            chapter = self.album.chapters[index]
+            self.chapter_combo.setToolTip(f"{chapter.index}. {chapter.title}")
+
+    def start_reader_worker(self, chapter: ChapterMeta):
+        self.chapter = chapter
+        self.setWindowTitle(f"阅读 - {self.album.title} / {chapter.title}")
+        self.update_reader_header_text()
+        self.reset_reader_pages()
+        worker = ReaderWorker(self.album, chapter, self.config, self)
+        self.worker = worker
+        worker.image_ready.connect(lambda index, path, worker=worker: self.add_image(index, path) if worker is self.worker else None)
+        worker.progress.connect(lambda done, total, worker=worker: self.on_progress(done, total) if worker is self.worker else None)
+        worker.log.connect(lambda message, worker=worker: self.log_callback(message) if worker is self.worker else None)
+        worker.failed.connect(lambda message, worker=worker: self.on_failed(message) if worker is self.worker else None)
+        worker.finished_ok.connect(lambda worker=worker: self.on_finished() if worker is self.worker else None)
+        worker.finished.connect(lambda worker=worker: self.on_worker_finished(worker))
+        self.update_current_reader_page()
+        worker.start()
+
+    def reset_reader_pages(self):
+        self.page_labels.clear()
+        self.page_pixmaps.clear()
+        self.reader_total = 0
+        self.current_reader_page = 0
+        while self.page_layout.count():
+            item = self.page_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        self.loading_label = QLabel("正在准备章节...")
+        self.loading_label.setAlignment(Qt.AlignCenter)
+        self.loading_label.setStyleSheet("color:#64748b;padding:24px;")
+        self.page_layout.addWidget(self.loading_label)
+        self.page_layout.addStretch()
+        self.progress.setMaximum(1)
+        self.progress.setValue(0)
+        self.progress.setFormat("")
+        self.scroll.verticalScrollBar().setValue(0)
+        self.apply_reader_mode()
+        self.update_page_indicator()
+
+    def on_chapter_combo_changed(self, index: int):
+        if self._switching_chapter or index < 0 or index >= len(self.album.chapters):
+            return
+        self.switch_to_chapter(index)
+
+    def switch_to_chapter(self, index: int):
+        if index < 0 or index >= len(self.album.chapters):
+            return
+        chapter = self.album.chapters[index]
+        if chapter.chapter_id == self.chapter.chapter_id:
+            return
+        old_worker = self.worker
+        if old_worker and old_worker.isRunning():
+            old_worker.cancel()
+            self.stale_workers.append(old_worker)
+            old_worker.finished.connect(lambda worker=old_worker: self.forget_stale_worker(worker))
+        self._switching_chapter = True
+        self.chapter_combo.setCurrentIndex(index)
+        self._switching_chapter = False
+        self.start_reader_worker(chapter)
+
+    def open_next_chapter(self):
+        index = self.current_chapter_index()
+        if index >= 0 and index + 1 < len(self.album.chapters):
+            self.switch_to_chapter(index + 1)
+
+    def on_scale_mode_changed(self):
+        self.reader_scale_mode = self.scale_combo.currentData() or "original"
+        self.rescale_reader_pages()
+
+    def apply_reader_mode(self):
+        page_mode = self.reader_mode == "page"
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff if page_mode else Qt.ScrollBarAsNeeded)
+        self.prev_page_btn.setVisible(page_mode)
+        self.next_page_btn.setVisible(page_mode)
+        if page_mode and self.reader_total and self.current_reader_page <= 0:
+            self.current_reader_page = 1
+        for index, label in list(self.page_labels.items()):
+            try:
+                label.setVisible(not page_mode or index == self.current_reader_page)
+            except RuntimeError:
+                pass
+        self.update_page_indicator()
+
+    def flip_reader_page(self, direction: int):
+        if self.reader_mode != "page" or self.reader_total <= 0:
+            return
+        self.current_reader_page = max(1, min(self.reader_total, (self.current_reader_page or 1) + direction))
+        self.apply_reader_mode()
+        self.scroll.verticalScrollBar().setValue(0)
+
+    def forget_stale_worker(self, worker: ReaderWorker):
+        if worker in self.stale_workers:
+            self.stale_workers.remove(worker)
 
     def add_image(self, index: int, image_path: str):
         if self._closing:
@@ -154,6 +312,8 @@ class ReaderDialog(QDialog):
             label.setText("")
             label.setStyleSheet("background:white;")
             self.apply_reader_pixmap(index)
+            self.apply_reader_mode()
+            self.update_current_reader_page()
 
     def on_progress(self, done: int, total: int):
         if self._closing:
@@ -162,6 +322,7 @@ class ReaderDialog(QDialog):
         self.progress.setValue(done)
         if total and total != self.reader_total:
             self.prepare_placeholders(total)
+        self.update_page_indicator()
 
     def prepare_placeholders(self, total: int):
         self.reader_total = total
@@ -176,6 +337,7 @@ class ReaderDialog(QDialog):
             insert_at = max(0, self.page_layout.count() - 1)
             self.page_layout.insertWidget(insert_at, label)
             self.page_labels[index] = label
+        self.apply_reader_mode()
 
     @staticmethod
     def create_reader_page_label(index: int) -> QLabel:
@@ -194,23 +356,71 @@ class ReaderDialog(QDialog):
         if label is None or pixmap is None or pixmap.isNull():
             return
         max_width = max(320, self.scroll.viewport().width() - 18)
-        target_width = min(max_width, pixmap.width())
-        if target_width >= pixmap.width():
+        if self.reader_scale_mode == "original":
             display = pixmap
         else:
-            display = pixmap.scaledToWidth(target_width, Qt.FastTransformation)
-        label.setMinimumHeight(display.height())
+            target_width = min(max_width, pixmap.width())
+            display = pixmap if target_width >= pixmap.width() else pixmap.scaledToWidth(target_width, Qt.SmoothTransformation)
+        label.setMinimumSize(display.size())
+        label.resize(display.size())
         label.setPixmap(display)
+        label.adjustSize()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         QTimer.singleShot(0, self.rescale_reader_pages)
+        QTimer.singleShot(0, self.update_reader_header_text)
 
     def rescale_reader_pages(self):
         if self._closing:
             return
         for index in list(self.page_pixmaps):
             self.apply_reader_pixmap(index)
+        self.update_current_reader_page()
+
+    def update_current_reader_page(self):
+        if self._closing:
+            return
+        if self.reader_mode == "page":
+            if self.reader_total and self.current_reader_page <= 0:
+                self.current_reader_page = 1
+            self.update_page_indicator()
+            return
+        if not self.page_labels:
+            self.current_reader_page = 0
+            self.update_page_indicator()
+            return
+        scrollbar = self.scroll.verticalScrollBar()
+        center_y = scrollbar.value() + max(1, self.scroll.viewport().height() // 2)
+        selected = 1
+        best_distance = None
+        for index, label in sorted(self.page_labels.items()):
+            try:
+                top = label.y()
+                bottom = top + max(1, label.height())
+            except RuntimeError:
+                continue
+            if top <= center_y <= bottom:
+                selected = index
+                break
+            distance = min(abs(center_y - top), abs(center_y - bottom))
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                selected = index
+        self.current_reader_page = min(max(1, selected), max(1, self.reader_total or selected))
+        self.update_page_indicator()
+
+    def update_page_indicator(self):
+        total = self.reader_total
+        current = self.current_reader_page if total else 0
+        self.page_indicator.setText(f"第 {current} / {total} 页")
+        chapter_index = self.current_chapter_index()
+        has_next = chapter_index >= 0 and chapter_index + 1 < len(self.album.chapters)
+        self.next_chapter_btn.setEnabled(bool(has_next and total and current >= total))
+        if hasattr(self, "prev_page_btn"):
+            page_mode = self.reader_mode == "page"
+            self.prev_page_btn.setEnabled(bool(page_mode and total and current > 1))
+            self.next_page_btn.setEnabled(bool(page_mode and total and current < total))
 
     def on_failed(self, message: str):
         if self._closing:
@@ -219,6 +429,7 @@ class ReaderDialog(QDialog):
 
     def on_finished(self):
         self.progress.setFormat("加载完成")
+        self.update_current_reader_page()
 
     def closeEvent(self, event):
         if self._force_close:
@@ -229,13 +440,207 @@ class ReaderDialog(QDialog):
             self._closing = True
             self.hide()
             self.worker.cancel()
+            for worker in list(self.stale_workers):
+                if worker.isRunning():
+                    worker.cancel()
             return
         super().closeEvent(event)
 
-    def on_worker_finished(self):
+    def on_worker_finished(self, worker=None):
+        if worker is not None and worker is not self.worker and not self._closing:
+            return
         if self._closing:
             self._force_close = True
             self.close()
+
+
+class LocalImageReaderDialog(QDialog):
+    def __init__(self, title: str, image_paths: List[Path], reading_mode: str = "scroll", parent=None):
+        super().__init__(parent)
+        self.image_paths = image_paths
+        self.page_labels: Dict[int, QLabel] = {}
+        self.page_pixmaps: Dict[int, QPixmap] = {}
+        self.current_page = 0
+        self.scale_mode = "original"
+        self.reading_mode = reading_mode or "scroll"
+        self.load_index = 0
+        self.setWindowTitle(f"本地阅读 - {title}")
+        self.setWindowFlags(
+            (self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+            | Qt.WindowMinimizeButtonHint
+            | Qt.WindowMaximizeButtonHint
+            | Qt.WindowCloseButtonHint
+        )
+        self.resize(860, 820)
+        self.setMinimumSize(560, 520)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        header = QHBoxLayout()
+        header.setSpacing(6)
+        self.local_title = title
+        self.title_label = QLabel(title)
+        self.title_label.setWordWrap(False)
+        self.title_label.setMinimumWidth(140)
+        self.title_label.setMaximumWidth(420)
+        self.title_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.title_label.setStyleSheet("font-weight:700;color:#1f2937;")
+        self.page_indicator = QLabel(f"第 0 / {len(image_paths)} 页")
+        self.page_indicator.setMinimumWidth(92)
+        self.page_indicator.setStyleSheet("color:#334155;font-weight:700;padding:0 8px;")
+        self.scale_combo = QComboBox()
+        self.scale_combo.addItem("原始大小", "original")
+        self.scale_combo.addItem("适应宽度", "fit_width")
+        self.scale_combo.setMaximumWidth(120)
+        self.scale_combo.currentIndexChanged.connect(self.on_scale_mode_changed)
+        self.prev_page_btn = QPushButton("上一页")
+        self.prev_page_btn.clicked.connect(lambda: self.flip_page(-1))
+        self.next_page_btn = QPushButton("下一页")
+        self.next_page_btn.clicked.connect(lambda: self.flip_page(1))
+        header.addWidget(self.title_label, 1)
+        header.addWidget(self.page_indicator)
+        header.addWidget(self.scale_combo)
+        header.addWidget(self.prev_page_btn)
+        header.addWidget(self.next_page_btn)
+        layout.addLayout(header)
+        self.update_header_title()
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff if self.reading_mode == "page" else Qt.ScrollBarAsNeeded)
+        self.scroll.verticalScrollBar().valueChanged.connect(self.update_current_page)
+        self.page = QWidget()
+        self.page_layout = QVBoxLayout(self.page)
+        self.page_layout.setContentsMargins(0, 0, 0, 0)
+        self.page_layout.setSpacing(8)
+        for index, path in enumerate(image_paths, start=1):
+            label = QLabel(f"第 {index} 页：{path.name}")
+            label.setAlignment(Qt.AlignCenter)
+            label.setMinimumHeight(120)
+            label.setStyleSheet(
+                "background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;color:#64748b;padding:18px;"
+            )
+            self.page_layout.addWidget(label)
+            self.page_labels[index] = label
+        self.page_layout.addStretch()
+        self.scroll.setWidget(self.page)
+        layout.addWidget(self.scroll, 1)
+
+        QTimer.singleShot(0, self.load_next_image)
+        self.apply_reading_mode()
+
+    def load_next_image(self):
+        if self.load_index >= len(self.image_paths):
+            self.update_current_page()
+            return
+        index = self.load_index + 1
+        path = self.image_paths[self.load_index]
+        label = self.page_labels.get(index)
+        reader = QImageReader(str(path))
+        reader.setAutoTransform(True)
+        pixmap = QPixmap.fromImage(reader.read())
+        if label is not None:
+            if pixmap.isNull():
+                label.setText(f"第 {index} 页加载失败")
+            else:
+                self.page_pixmaps[index] = pixmap
+                label.setText("")
+                label.setStyleSheet("background:white;")
+                self.apply_pixmap(index)
+                self.apply_reading_mode()
+        self.load_index += 1
+        QTimer.singleShot(1, self.load_next_image)
+
+    def on_scale_mode_changed(self):
+        self.scale_mode = self.scale_combo.currentData() or "original"
+        for index in list(self.page_pixmaps):
+            self.apply_pixmap(index)
+        self.update_current_page()
+
+    def apply_reading_mode(self):
+        page_mode = self.reading_mode == "page"
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff if page_mode else Qt.ScrollBarAsNeeded)
+        self.prev_page_btn.setVisible(page_mode)
+        self.next_page_btn.setVisible(page_mode)
+        if page_mode and self.image_paths and self.current_page <= 0:
+            self.current_page = 1
+        for index, label in list(self.page_labels.items()):
+            try:
+                label.setVisible(not page_mode or index == self.current_page)
+            except RuntimeError:
+                pass
+        self.update_page_buttons()
+
+    def flip_page(self, direction: int):
+        if self.reading_mode != "page" or not self.image_paths:
+            return
+        self.current_page = max(1, min(len(self.image_paths), (self.current_page or 1) + direction))
+        self.apply_reading_mode()
+        self.scroll.verticalScrollBar().setValue(0)
+
+    def apply_pixmap(self, index: int):
+        label = self.page_labels.get(index)
+        pixmap = self.page_pixmaps.get(index)
+        if label is None or pixmap is None or pixmap.isNull():
+            return
+        if self.scale_mode == "original":
+            display = pixmap
+        else:
+            target_width = min(max(320, self.scroll.viewport().width() - 18), pixmap.width())
+            display = pixmap if target_width >= pixmap.width() else pixmap.scaledToWidth(target_width, Qt.SmoothTransformation)
+        label.setMinimumSize(display.size())
+        label.resize(display.size())
+        label.setPixmap(display)
+        label.adjustSize()
+
+    def update_header_title(self):
+        elide_label_text(self.title_label, self.local_title, 340)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self.update_header_title)
+        if self.scale_mode == "fit_width":
+            QTimer.singleShot(0, self.on_scale_mode_changed)
+
+    def update_current_page(self):
+        if self.reading_mode == "page":
+            if self.image_paths and self.current_page <= 0:
+                self.current_page = 1
+            self.page_indicator.setText(f"第 {self.current_page} / {len(self.image_paths)} 页")
+            self.update_page_buttons()
+            return
+        if not self.page_labels:
+            self.current_page = 0
+            self.page_indicator.setText(f"第 0 / {len(self.image_paths)} 页")
+            return
+        scrollbar = self.scroll.verticalScrollBar()
+        center_y = scrollbar.value() + max(1, self.scroll.viewport().height() // 2)
+        selected = 1
+        best_distance = None
+        for index, label in sorted(self.page_labels.items()):
+            try:
+                top = label.y()
+                bottom = top + max(1, label.height())
+            except RuntimeError:
+                continue
+            if top <= center_y <= bottom:
+                selected = index
+                break
+            distance = min(abs(center_y - top), abs(center_y - bottom))
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                selected = index
+        self.current_page = min(max(1, selected), max(1, len(self.image_paths)))
+        self.page_indicator.setText(f"第 {self.current_page} / {len(self.image_paths)} 页")
+        self.update_page_buttons()
+
+    def update_page_buttons(self):
+        page_mode = self.reading_mode == "page"
+        total = len(self.image_paths)
+        self.prev_page_btn.setEnabled(bool(page_mode and total and self.current_page > 1))
+        self.next_page_btn.setEnabled(bool(page_mode and total and self.current_page < total))
 
 
 class DetailDialog(QDialog):
@@ -405,6 +810,7 @@ class MainWindow(QMainWindow):
         self.download_worker: Optional[DownloadWorker] = None
         self.domain_worker: Optional[DomainRefreshWorker] = None
         self.reader_dialogs: List[ReaderDialog] = []
+        self.local_reader_dialogs: List[LocalImageReaderDialog] = []
         self.loading_timer: Optional[QTimer] = None
         self.loading_tick = 0
         self.page_animation: Optional[QPropertyAnimation] = None
@@ -605,21 +1011,27 @@ class MainWindow(QMainWindow):
         body_layout.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         card = QFrame()
         card.setObjectName("loginCard")
-        card.setFixedWidth(312)
+        card.setMinimumWidth(300)
+        card.setMaximumWidth(430)
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         form = QFormLayout(card)
         form.setContentsMargins(22, 24, 22, 20)
         form.setSpacing(10)
 
         self.login_user_edit = QLineEdit()
         self.login_user_edit.setPlaceholderText("账号")
+        self.login_user_edit.setMinimumHeight(36)
         self.login_pass_edit = QLineEdit()
         self.login_pass_edit.setEchoMode(QLineEdit.Password)
         self.login_pass_edit.setPlaceholderText("密码")
+        self.login_pass_edit.setMinimumHeight(36)
         self.login_cookie_edit = QTextEdit()
         self.login_cookie_edit.setFixedHeight(58)
         self.login_cookie_edit.setPlainText(load_cookie_header() or jmcomic_default_cookie_header())
         self.login_cookie_edit.setPlaceholderText("可选但推荐：粘贴浏览器 Cookie，用于通过已验证会话访问")
+        self.login_cookie_edit.hide()
         self.login_ua_edit = QLineEdit(DEFAULT_USER_AGENT)
+        self.login_ua_edit.hide()
 
         login_btn = QPushButton("登录并进入下载器")
         login_btn.setObjectName("primaryButton")
@@ -633,18 +1045,16 @@ class MainWindow(QMainWindow):
         btn_row.addWidget(login_btn)
         btn_row.addWidget(open_btn)
 
-        note = QLabel("账号密码用于界面登录记录；如站点要求安全验证，请先在系统浏览器登录并复制 Cookie。")
+        note = QLabel("如站点需要安全验证，请进入设置页使用浏览器验证 Cookie。")
         note.setWordWrap(True)
         note.setStyleSheet("color:#64748b;")
 
         form.addRow("账号", self.login_user_edit)
         form.addRow("密码", self.login_pass_edit)
-        form.addRow("Cookie", self.login_cookie_edit)
-        form.addRow("User-Agent", self.login_ua_edit)
         form.addRow(btn_row)
         form.addRow(skip_btn)
         form.addRow(note)
-        body_layout.addWidget(card)
+        body_layout.addWidget(card, 0, Qt.AlignHCenter)
         body_layout.addStretch()
         layout.addWidget(body, 1)
         return page
@@ -731,6 +1141,7 @@ class MainWindow(QMainWindow):
                 "make_pdf": self.make_pdf.isChecked(),
                 "keep_images": self.keep_images.isChecked(),
                 "detail_check": self.detail_check.isChecked() if hasattr(self, "detail_check") else True,
+                "reading_mode": self.reading_mode_combo.currentData() if hasattr(self, "reading_mode_combo") else "scroll",
                 "cookie": self.cookie_edit.toPlainText().strip() if hasattr(self, "cookie_edit") else "",
                 "user_agent": self.ua_edit.text().strip() if hasattr(self, "ua_edit") else DEFAULT_USER_AGENT,
                 "proxy": self.proxy_edit.text().strip() if hasattr(self, "proxy_edit") else "",
@@ -759,6 +1170,10 @@ class MainWindow(QMainWindow):
             self.keep_images.setChecked(bool(self.settings_cache.get("keep_images", True)))
             if hasattr(self, "detail_check"):
                 self.detail_check.setChecked(bool(self.settings_cache.get("detail_check", True)))
+            if hasattr(self, "reading_mode_combo"):
+                reading_mode = str(self.settings_cache.get("reading_mode") or "scroll")
+                index = self.reading_mode_combo.findData(reading_mode)
+                self.reading_mode_combo.setCurrentIndex(index if index >= 0 else 0)
 
             cookie = str(self.settings_cache.get("cookie") or "")
             if cookie:
@@ -795,6 +1210,8 @@ class MainWindow(QMainWindow):
         for edit in [self.ua_edit, self.proxy_edit, self.output_edit]:
             edit.textChanged.connect(self.schedule_settings_save)
         self.cookie_edit.textChanged.connect(self.schedule_settings_save)
+        if hasattr(self, "reading_mode_combo"):
+            self.reading_mode_combo.currentIndexChanged.connect(self.schedule_settings_save)
         for spinbox in [self.delay_min, self.delay_max, self.retries, self.backoff, self.image_threads, self.detail_threads]:
             spinbox.valueChanged.connect(self.schedule_settings_save)
         self._settings_autosave_connected = True
@@ -1275,11 +1692,15 @@ class MainWindow(QMainWindow):
         self.detail_threads.setValue(6)
         self.stop_on_block = QCheckBox("遇到 403/429 停止")
         self.stop_on_block.setChecked(True)
+        self.reading_mode_combo = QComboBox()
+        self.reading_mode_combo.addItem("鼠标滚动阅读（PDF/WebP/JPG 通用）", "scroll")
+        self.reading_mode_combo.addItem("左右切换页码（图片格式）", "page")
         verify_btn = QPushButton("浏览器验证 Cookie")
         verify_btn.clicked.connect(self.open_cookie_verifier)
 
         form.addRow("下载格式", format_row)
         form.addRow("下载选项", download_options)
+        form.addRow("阅读方式", self.reading_mode_combo)
         form.addRow(verify_btn)
         form.addRow("Cookie", self.cookie_edit)
         form.addRow("User-Agent", self.ua_edit)
@@ -1507,11 +1928,12 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         header = QHBoxLayout()
-        title = QLabel("结果")
-        title.setObjectName("panelTitle")
+        refresh_btn = QPushButton("刷新")
+        refresh_btn.setObjectName("ghostButton")
+        refresh_btn.clicked.connect(self.refresh_current_results)
         self.loading_label = QLabel("等待操作")
         self.loading_label.setStyleSheet("color:#8290a7;")
-        header.addWidget(title)
+        header.addWidget(refresh_btn)
         header.addStretch()
         header.addWidget(self.loading_label)
         layout.addLayout(header)
@@ -1706,10 +2128,17 @@ class MainWindow(QMainWindow):
         header = QHBoxLayout()
         title = QLabel("历史下载记录")
         title.setObjectName("panelTitle")
+        read_btn = QPushButton("阅读选中")
+        read_btn.setObjectName("primaryButton")
+        read_btn.clicked.connect(self.open_selected_history_reading)
+        open_dir_btn = QPushButton("打开位置")
+        open_dir_btn.clicked.connect(self.open_selected_history_location)
         clear_btn = QPushButton("清空历史")
         clear_btn.clicked.connect(self.clear_download_history)
         header.addWidget(title)
         header.addStretch()
+        header.addWidget(open_dir_btn)
+        header.addWidget(read_btn)
         header.addWidget(clear_btn)
         layout.addLayout(header)
 
@@ -1722,6 +2151,7 @@ class MainWindow(QMainWindow):
         self.history_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.history_table.cellDoubleClicked.connect(lambda row, col: self.open_selected_history_reading())
         layout.addWidget(self.history_table, 1)
         self.refresh_history_table()
         return panel
@@ -1751,6 +2181,83 @@ class MainWindow(QMainWindow):
         self.download_history.clear()
         self.refresh_history_table()
         self.save_local_cache()
+
+    def selected_history_record(self) -> Optional[Dict[str, str]]:
+        if not hasattr(self, "history_table") or not self.download_history:
+            return None
+        row = self.history_table.currentRow()
+        if row < 0 or row >= len(self.download_history):
+            return None
+        return self.download_history[row]
+
+    def open_selected_history_reading(self):
+        record = self.selected_history_record()
+        if not record:
+            QMessageBox.information(self, "提示", "请先选择一条历史记录。")
+            return
+        path = Path(record.get("path", "")).expanduser()
+        if not path.exists():
+            QMessageBox.warning(self, "文件不存在", f"找不到本地文件：{path}")
+            return
+
+        image_dir = self.resolve_history_image_dir(path)
+        if image_dir:
+            images = self.collect_local_reader_images(image_dir)
+            if images:
+                reading_mode = self.reading_mode_combo.currentData() if hasattr(self, "reading_mode_combo") else "scroll"
+                dialog = LocalImageReaderDialog(record.get("title") or image_dir.name, images, reading_mode, self)
+                self.local_reader_dialogs.append(dialog)
+                dialog.destroyed.connect(lambda _=None, dialog=dialog: self.forget_local_reader_dialog(dialog))
+                dialog.showMaximized()
+                dialog.raise_()
+                dialog.activateWindow()
+                return
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def open_selected_history_location(self):
+        record = self.selected_history_record()
+        if not record:
+            QMessageBox.information(self, "提示", "请先选择一条历史记录。")
+            return
+        path = Path(record.get("path", "")).expanduser()
+        target = path if path.is_dir() else path.parent
+        if not target.exists():
+            QMessageBox.warning(self, "路径不存在", f"找不到本地路径：{target}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+    def resolve_history_image_dir(self, path: Path) -> Optional[Path]:
+        if path.is_dir():
+            return path if self.collect_local_reader_images(path) else None
+        if path.suffix.lower() in IMAGE_SUFFIXES:
+            return path.parent
+        if path.suffix.lower() == ".pdf":
+            sibling = path.with_suffix("")
+            if sibling.exists() and sibling.is_dir() and self.collect_local_reader_images(sibling):
+                return sibling
+            if " - " in path.stem:
+                album_name, chapter_name = path.stem.split(" - ", 1)
+                album_dir = path.parent / album_name
+                chapter_dir = album_dir / chapter_name
+                if chapter_dir.exists() and self.collect_local_reader_images(chapter_dir):
+                    return chapter_dir
+                if album_dir.exists() and self.collect_local_reader_images(album_dir):
+                    return album_dir
+        return None
+
+    @staticmethod
+    def collect_local_reader_images(directory: Path) -> List[Path]:
+        if not directory.exists() or not directory.is_dir():
+            return []
+        direct = collect_images(directory)
+        if direct:
+            return direct
+        return sorted(
+            path
+            for path in directory.rglob("*")
+            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+        )
 
     def _build_about_panel(self) -> QFrame:
         panel = QFrame()
@@ -1956,6 +2463,11 @@ class MainWindow(QMainWindow):
             button.setChecked(True)
         self.start_scrape()
 
+    def refresh_current_results(self):
+        cache_key = self.result_cache_key()
+        self.result_cache.pop(cache_key, None)
+        self.start_scrape()
+
     def restore_results_from_cache(self, cache_key: str) -> bool:
         cached = self.result_cache.get(cache_key)
         if not cached:
@@ -2003,6 +2515,7 @@ class MainWindow(QMainWindow):
             output_format=self.selected_output_format(),
             pdf_split_chapters=self.make_pdf.isChecked(),
             keep_images=self.keep_images.isChecked(),
+            reading_mode=self.reading_mode_combo.currentData() if hasattr(self, "reading_mode_combo") else "scroll",
         )
 
     def start_scrape(self, source_page: int = 1, append: bool = False):
@@ -2245,7 +2758,7 @@ class MainWindow(QMainWindow):
             col = visible_index % columns
             self.result_grid.addWidget(card, row, col)
             self.card_by_id[album.album_id] = card
-            QTimer.singleShot(visible_index * 22, lambda card=card: self.safe_animate_enter(card, 180, offset_y=10, scale_px=4))
+            QTimer.singleShot(visible_index * 18, lambda card=card: self.safe_fade_in_card(card))
             visible_index += 1
         self.result_grid.setRowStretch((visible_index + columns - 1) // columns, 1)
         for col in range(columns):
@@ -2258,7 +2771,28 @@ class MainWindow(QMainWindow):
         except RuntimeError:
             pass
 
+    def safe_fade_in_card(self, card: QWidget):
+        try:
+            if not card or card.parent() is None:
+                return
+            effect = QGraphicsOpacityEffect(card)
+            card.setGraphicsEffect(effect)
+            animation = QPropertyAnimation(effect, b"opacity", card)
+            animation.setDuration(160)
+            animation.setStartValue(0.0)
+            animation.setEndValue(1.0)
+            animation.setEasingCurve(QEasingCurve.OutCubic)
+            animation.finished.connect(lambda card=card: self.finish_widget_animation(card))
+            card._fade_animation = animation
+            animation.start()
+        except RuntimeError:
+            pass
+
     def clear_result_grid(self):
+        for row in range(20):
+            self.result_grid.setRowStretch(row, 0)
+        for col in range(8):
+            self.result_grid.setColumnStretch(col, 0)
         while self.result_grid.count():
             item = self.result_grid.takeAt(0)
             widget = item.widget()
@@ -2271,7 +2805,8 @@ class MainWindow(QMainWindow):
         card_width = self.result_card_width()
         cover_width = max(118, min(150, card_width - 24))
         cover_height = int(cover_width * 1.33)
-        card.setFixedWidth(card_width)
+        card_height = cover_height + 102
+        card.setFixedSize(card_width, card_height)
         card.setCursor(Qt.PointingHandCursor)
         card.setStyleSheet(self.album_card_style(album.album_id in self.selected_album_ids))
         card.mousePressEvent = lambda event, album_id=album.album_id: self.schedule_album_single_click(album_id)
@@ -2306,11 +2841,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(cover, 0, Qt.AlignHCenter)
         self.request_cover(album, cover)
 
-        title = QLabel(album.title)
-        title.setWordWrap(True)
-        title.setFixedHeight(34)
+        title = QLabel()
+        title.setWordWrap(False)
+        title.setFixedHeight(20)
         title.setToolTip(album.title)
         title.setStyleSheet("font-weight:600;color:#1f2937;")
+        title_width = max(60, card_width - 10)
+        title.setText(QFontMetrics(title.font()).elidedText(album.title or "-", Qt.ElideRight, title_width))
         layout.addWidget(title)
 
         sub = QLabel(f"作者：{album.author}\n章节：{len(album.chapters) if album.chapters else '-'}")
@@ -2696,6 +3233,10 @@ class MainWindow(QMainWindow):
     def forget_reader_dialog(self, dialog: ReaderDialog):
         if dialog in self.reader_dialogs:
             self.reader_dialogs.remove(dialog)
+
+    def forget_local_reader_dialog(self, dialog: LocalImageReaderDialog):
+        if dialog in self.local_reader_dialogs:
+            self.local_reader_dialogs.remove(dialog)
 
     def selected_chapter_ids(self, album: AlbumMeta) -> List[str]:
         ids = []
