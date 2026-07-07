@@ -6,3 +6,6 @@ lxml>=4.9
 Pillow>=9.2
 pycryptodome>=3.20
 jmcomic>=2.6
+pypdfium2>=4.30
+fastapi>=0.111
+uvicorn[standard]>=0.30

@@ -3,8 +3,8 @@ import sys
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
 
-from .app_icon import app_icon, set_windows_app_id
-from .ui import MainWindow
+from .frontend.app_icon import app_icon, set_windows_app_id
+from .frontend.ui import MainWindow
 
 
 def main():
