@@ -399,7 +399,7 @@ class JmApiClient:
         )
 
     def cover_url(self, album_id: str) -> str:
-        return f"https://{self._image_domains[0]}/media/albums/{parse_jm_id(album_id)}.jpg"
+        return f"https://{self._image_domains[0]}/media/albums/{parse_jm_id(album_id)}_3x4.jpg"
 
     def build_image_urls(self, photo: PhotoDetail, image_name: str) -> Iterable[str]:
         yield f"https://{photo.image_domain}/media/photos/{photo.photo_id}/{image_name}"

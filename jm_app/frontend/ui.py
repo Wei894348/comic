@@ -4511,14 +4511,14 @@ class MainWindow(QMainWindow):
         match = re.search(r"(\d+)", album_id or "")
         if not match or not self.cover_domain_pool:
             return ""
-        return f"https://{self.cover_domain_pool[0]}/media/albums/{match.group(1)}.jpg"
+        return f"https://{self.cover_domain_pool[0]}/media/albums/{match.group(1)}_3x4.jpg"
 
     def cover_url_candidates(self, url: str, album_id: str = "") -> List[str]:
         candidates = []
         if "_3x4.jpg" in url:
-            candidates.extend([url.replace("_3x4.jpg", ".jpg"), url])
+            candidates.extend([url, url.replace("_3x4.jpg", ".jpg")])
         elif url.endswith(".jpg"):
-            candidates.extend([url, url[:-4] + "_3x4.jpg"])
+            candidates.extend([url[:-4] + "_3x4.jpg", url])
         elif url:
             candidates.append(url)
 
@@ -4530,8 +4530,8 @@ class MainWindow(QMainWindow):
             original_domain = urlparse(url).netloc
             domains = self.sorted_cover_domains(original_domain)
             for domain in domains:
-                candidates.append(f"https://{domain}/media/albums/{numeric_id}.jpg")
                 candidates.append(f"https://{domain}/media/albums/{numeric_id}_3x4.jpg")
+                candidates.append(f"https://{domain}/media/albums/{numeric_id}.jpg")
 
         deduped = []
         seen = set()

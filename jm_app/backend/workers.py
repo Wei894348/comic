@@ -92,7 +92,8 @@ class ScrapeWorker(QThread):
                 if getattr(self.config, "protocol_parser", True):
                     self.log.emit(f"Protocol parser metadata prefetch: {total} albums, workers={self._detail_threads(total)}")
                 self.log.emit(f"正在并发加载详情，线程数：{self._detail_threads(total)}")
-                self._emit_parallel_details([album.album_id for album in albums], api_domains)
+                seed_albums = {album.album_id: album for album in albums}
+                self._emit_parallel_details([album.album_id for album in albums], api_domains, seed_albums)
             else:
                 for index, album in enumerate(albums, start=1):
                     if self.cancel_event.is_set():
@@ -145,7 +146,12 @@ class ScrapeWorker(QThread):
             page += 1
         return albums
 
-    def _emit_parallel_details(self, item_ids: List[str], api_domains: List[str]):
+    def _emit_parallel_details(
+        self,
+        item_ids: List[str],
+        api_domains: List[str],
+        seed_albums: Optional[Dict[str, AlbumMeta]] = None,
+    ):
         total = len(item_ids)
         self.progress.emit(0, total)
         if total == 0:
@@ -154,7 +160,12 @@ class ScrapeWorker(QThread):
         done = 0
         with ThreadPoolExecutor(max_workers=self._detail_threads(total)) as executor:
             futures = {
-                executor.submit(self._load_one_detail, item_id, api_domains): index
+                executor.submit(
+                    self._load_one_detail,
+                    item_id,
+                    api_domains,
+                    seed_albums.get(item_id) if seed_albums else None,
+                ): index
                 for index, item_id in enumerate(item_ids)
             }
             for future in as_completed(futures):
@@ -168,13 +179,22 @@ class ScrapeWorker(QThread):
                 done += 1
                 self.progress.emit(done, total)
 
-    def _load_one_detail(self, item_id: str, api_domains: List[str]) -> AlbumMeta:
+    def _load_one_detail(
+        self,
+        item_id: str,
+        api_domains: List[str],
+        seed_album: Optional[AlbumMeta] = None,
+    ) -> AlbumMeta:
         client = JmApiClient(self.config, self.log.emit, self.cancel_event)
         client._api_domains = list(api_domains)
         client._domains_initialized = True
         if item_id.lower().startswith("p"):
-            return client.photo_as_album(item_id[1:])
-        return client.get_album_detail(item_id)
+            detail = client.photo_as_album(item_id[1:])
+        else:
+            detail = client.get_album_detail(item_id)
+        if seed_album and seed_album.cover_url:
+            detail.cover_url = seed_album.cover_url
+        return detail
 
     def _detail_threads(self, total: int) -> int:
         return min(max(1, self.config.detail_threads), max(1, total))
