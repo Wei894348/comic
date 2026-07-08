@@ -903,7 +903,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(
             f"""
             QMainWindow {{ background: #f6f8fb; }}
-            QWidget#appRoot {{ background: #f6f8fb; }}
+            QWidget#appRoot {{ background: #f8fafc; }}
             QLabel {{ color: {TEXT}; }}
             QLineEdit, QTextEdit, QSpinBox {{
                 border: 1px solid #d5dce8;
@@ -955,14 +955,14 @@ class MainWindow(QMainWindow):
                 border-radius: 16px;
             }}
             QFrame#dashboardHeader {{
-                background: white;
-                border: 1px solid #e4eaf3;
-                border-radius: 8px;
+                background: transparent;
+                border: 0;
+                border-radius: 0;
             }}
             QFrame#panel {{
                 background: white;
-                border: 1px solid #dfe7f2;
-                border-radius: 8px;
+                border: 1px solid #e4eaf3;
+                border-radius: 12px;
             }}
             QLabel#panelTitle {{
                 font-size: 14px;
@@ -1074,19 +1074,40 @@ class MainWindow(QMainWindow):
             QPushButton#navButton {{
                 border: none;
                 border-radius: 8px;
-                padding: 12px 8px;
-                text-align: center;
+                padding: 0 18px;
+                min-height: 54px;
+                text-align: left;
                 background: transparent;
                 color: #5b6b82;
                 font-weight: 700;
+                font-size: 16px;
             }}
             QPushButton#navButton:hover {{
                 background: #eef4fb;
                 color: #1d4ed8;
             }}
             QPushButton#navButton:checked {{
-                background: {BLUE};
+                background: #2563eb;
                 color: white;
+            }}
+            QFrame#connectionCard {{
+                background: #ffffff;
+                border: 1px solid #e6edf6;
+                border-radius: 12px;
+            }}
+            QLabel#connectionTitle {{
+                color: #1f2937;
+                font-size: 14px;
+                font-weight: 800;
+            }}
+            QLabel#connectionSub {{
+                color: #64748b;
+                font-size: 12px;
+                font-weight: 700;
+            }}
+            QLabel#connectionDot {{
+                font-size: 18px;
+                font-weight: 900;
             }}
             QTableWidget {{
                 background: white;
@@ -1682,6 +1703,30 @@ class MainWindow(QMainWindow):
         self.backend_label.setStyleSheet(
             styles.get(state, styles["idle"]) + "border-radius:12px;padding:4px 10px;"
         )
+        self.update_connection_card(state)
+
+    def update_connection_card(self, state: str = "idle"):
+        if not hasattr(self, "connection_title"):
+            return
+        title_map = {
+            "ok": "连接正常",
+            "busy": "正在连接",
+            "warn": "需要验证",
+            "error": "连接异常",
+            "idle": "等待操作",
+        }
+        color_map = {
+            "ok": "#22c55e",
+            "busy": "#2563eb",
+            "warn": "#f59e0b",
+            "error": "#ef4444",
+            "idle": "#94a3b8",
+        }
+        loaded = len([album for album in self.result_albums if album is not None])
+        total = max(self.result_total_count, loaded)
+        self.connection_title.setText(title_map.get(state, title_map["idle"]))
+        self.connection_dot.setStyleSheet(f"color:{color_map.get(state, color_map['idle'])};")
+        self.connection_sub.setText(f"已载入 {loaded}/{total} 条漫画数据")
 
     def show_login_loading(self, message: str, callback):
         self.login_user_edit.setEnabled(False)
@@ -1793,30 +1838,53 @@ class MainWindow(QMainWindow):
     def _build_navigation_panel(self) -> QFrame:
         panel = QFrame()
         panel.setObjectName("panel")
-        panel.setFixedWidth(92)
+        panel.setFixedWidth(174)
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(8, 10, 8, 10)
-        layout.setSpacing(8)
+        layout.setContentsMargins(14, 16, 14, 14)
+        layout.setSpacing(10)
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         self.nav_buttons = {}
         items = [
-            ("首页", self.home_page_index(), self.switch_page),
-            ("下载", self.downloading_page_index(), self.switch_page),
-            ("历史", self.history_page_index(), self.switch_page),
-            ("设置", self.settings_page_index(), self.switch_page),
-            ("关于", self.about_page_index(), self.switch_page),
+            ("⌂  首页", self.home_page_index(), self.switch_page),
+            ("⇩  下载", self.downloading_page_index(), self.switch_page),
+            ("◷  历史", self.history_page_index(), self.switch_page),
+            ("⚙  设置", self.settings_page_index(), self.switch_page),
+            ("ⓘ  关于", self.about_page_index(), self.switch_page),
         ]
         for text, index, callback in items:
             button = QPushButton(text)
             button.setObjectName("navButton")
             button.setCheckable(True)
+            button.setCursor(Qt.PointingHandCursor)
             button.clicked.connect(lambda checked=False, index=index, callback=callback: callback(index))
             self.nav_group.addButton(button)
             self.nav_buttons[index] = button
             layout.addWidget(button)
 
         layout.addStretch()
+        status_card = QFrame()
+        status_card.setObjectName("connectionCard")
+        status_layout = QVBoxLayout(status_card)
+        status_layout.setContentsMargins(14, 12, 14, 12)
+        status_layout.setSpacing(4)
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(8)
+        self.connection_dot = QLabel("●")
+        self.connection_dot.setObjectName("connectionDot")
+        self.connection_title = QLabel("等待操作")
+        self.connection_title.setObjectName("connectionTitle")
+        title_row.addWidget(self.connection_dot)
+        title_row.addWidget(self.connection_title)
+        title_row.addStretch()
+        self.connection_sub = QLabel("已载入 0/0 条漫画数据")
+        self.connection_sub.setObjectName("connectionSub")
+        self.connection_sub.setWordWrap(True)
+        status_layout.addLayout(title_row)
+        status_layout.addWidget(self.connection_sub)
+        layout.addWidget(status_card)
+        self.update_connection_card("idle")
         self.nav_buttons[self.home_page_index()].setChecked(True)
         return panel
 
@@ -2056,17 +2124,18 @@ class MainWindow(QMainWindow):
         self.main_header = header
         header.setObjectName("dashboardHeader")
         header.installEventFilter(self)
-        header.setFixedHeight(36)
+        header.setFixedHeight(44)
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(14, 0, 14, 0)
+        layout.setContentsMargins(6, 0, 10, 0)
         title = QLabel("JMComic 下载器")
-        title.setStyleSheet("font-size:15px;font-weight:800;color:#182235;")
+        title.setStyleSheet("font-size:22px;font-weight:800;color:#182235;")
         title.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.user_label = QLabel("")
         self.user_label.setStyleSheet("color:#64748b;")
         self.user_label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.backend_label = QLabel("待加载")
         self.set_backend_status("待加载", "idle")
+        self.backend_label.setVisible(False)
         logout_btn = QPushButton("退出登录")
         logout_btn.clicked.connect(self.logout)
         layout.addWidget(title)
@@ -3817,6 +3886,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "cover_label"):
             self.cover_label.setPixmap(QPixmap())
             self.cover_label.setText("暂无封面")
+        self.update_connection_card("idle")
         self.update_page_controls()
 
     def set_result_total(self, total: int):
@@ -3833,6 +3903,7 @@ class MainWindow(QMainWindow):
             self.result_stack.setCurrentWidget(self.result_loading_page)
         if self.result_total_count == 0:
             self.reveal_results()
+        self.update_connection_card("busy")
         self.update_page_controls()
 
     def upsert_album_at(self, index: int, album: AlbumMeta):
@@ -3859,6 +3930,7 @@ class MainWindow(QMainWindow):
                     self.append_visible_album_card(album)
         loaded = sum(1 for item in self.result_albums if item is not None)
         self.statusBar().showMessage(f"已载入 {loaded}/{self.result_total_count} 条漫画数据。")
+        self.update_connection_card("ok" if loaded and loaded >= self.result_total_count else "busy")
         self.update_page_controls()
 
     def cache_album_async(self, album: AlbumMeta):
