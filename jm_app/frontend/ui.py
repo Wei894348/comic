@@ -54,6 +54,7 @@ from PyQt5.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QStackedWidget,
+    QStyle,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -1081,6 +1082,7 @@ class MainWindow(QMainWindow):
                 color: #5b6b82;
                 font-weight: 700;
                 font-size: 16px;
+                icon-size: 20px 20px;
             }}
             QPushButton#navButton:hover {{
                 background: #eef4fb;
@@ -1727,6 +1729,8 @@ class MainWindow(QMainWindow):
         self.connection_title.setText(title_map.get(state, title_map["idle"]))
         self.connection_dot.setStyleSheet(f"color:{color_map.get(state, color_map['idle'])};")
         self.connection_sub.setText(f"已载入 {loaded}/{total} 条漫画数据")
+        if self.statusBar().currentMessage().startswith(("已载入", "已加载")):
+            self.statusBar().clearMessage()
 
     def show_login_loading(self, message: str, callback):
         self.login_user_edit.setEnabled(False)
@@ -1846,17 +1850,19 @@ class MainWindow(QMainWindow):
         self.nav_group.setExclusive(True)
         self.nav_buttons = {}
         items = [
-            ("⌂  首页", self.home_page_index(), self.switch_page),
-            ("⇩  下载", self.downloading_page_index(), self.switch_page),
-            ("◷  历史", self.history_page_index(), self.switch_page),
-            ("⚙  设置", self.settings_page_index(), self.switch_page),
-            ("ⓘ  关于", self.about_page_index(), self.switch_page),
+            ("首页", self.home_page_index(), self.switch_page, QStyle.SP_DirHomeIcon),
+            ("下载", self.downloading_page_index(), self.switch_page, QStyle.SP_ArrowDown),
+            ("历史", self.history_page_index(), self.switch_page, QStyle.SP_FileDialogDetailedView),
+            ("设置", self.settings_page_index(), self.switch_page, QStyle.SP_FileDialogContentsView),
+            ("关于", self.about_page_index(), self.switch_page, QStyle.SP_MessageBoxInformation),
         ]
-        for text, index, callback in items:
+        for text, index, callback, icon_role in items:
             button = QPushButton(text)
             button.setObjectName("navButton")
             button.setCheckable(True)
             button.setCursor(Qt.PointingHandCursor)
+            button.setIcon(self.style().standardIcon(icon_role))
+            button.setIconSize(QSize(20, 20))
             button.clicked.connect(lambda checked=False, index=index, callback=callback: callback(index))
             self.nav_group.addButton(button)
             self.nav_buttons[index] = button
@@ -3628,7 +3634,7 @@ class MainWindow(QMainWindow):
         self.current_result_page = max(1, min(self.current_result_page, self.result_total_pages() or 1))
         self.reveal_results()
         loaded = len(restored)
-        self.statusBar().showMessage(f"已加载 {loaded}/{self.result_total_count} 条漫画数据。")
+        self.update_connection_card("ok")
         self.update_page_controls()
 
     def start_async_cache_restore(self, cache_key: str) -> bool:
@@ -3929,7 +3935,6 @@ class MainWindow(QMainWindow):
                 if not self.update_album_card_content(album):
                     self.append_visible_album_card(album)
         loaded = sum(1 for item in self.result_albums if item is not None)
-        self.statusBar().showMessage(f"已载入 {loaded}/{self.result_total_count} 条漫画数据。")
         self.update_connection_card("ok" if loaded and loaded >= self.result_total_count else "busy")
         self.update_page_controls()
 
@@ -4016,7 +4021,7 @@ class MainWindow(QMainWindow):
     def upsert_album(self, album: AlbumMeta):
         self.albums[album.album_id] = album
         self.detail_cache[album.album_id] = copy.deepcopy(album)
-        self.statusBar().showMessage(f"已载入 {len(self.albums)} 条漫画数据。")
+        self.update_connection_card("ok")
 
     def update_album_row(self, album: AlbumMeta):
         self.albums[album.album_id] = album
