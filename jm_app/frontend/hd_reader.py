@@ -9,8 +9,8 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from PIL import Image
 
-from PyQt5.QtCore import QByteArray, QBuffer, QIODevice, QObject, QPoint, Qt, QThread, QTimer, pyqtSignal, QRectF, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QBrush, QColor, QImage, QImageReader, QPainter, QPen, QPixmap, QWheelEvent
+from PyQt5.QtCore import QByteArray, QBuffer, QIODevice, QObject, QPoint, Qt, QThread, QTimer, pyqtSignal, QRectF, QPropertyAnimation, QEasingCurve, QSize
+from PyQt5.QtGui import QBrush, QColor, QImage, QImageReader, QMovie, QPainter, QPen, QPixmap, QWheelEvent
 from PyQt5.QtWidgets import (
     QAction,
     QComboBox,
@@ -39,6 +39,8 @@ PDF_SUFFIXES = {".pdf"}
 SUPPORTED_READER_SUFFIXES = IMAGE_SUFFIXES | PDF_SUFFIXES
 PAGE_STITCH_GAP = 0
 PDFIUM_LOCK = threading.RLock()
+ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
+READER_LOADING_MOVIE_PATH = ASSETS_DIR / "reader_magic_loader.gif"
 
 
 class PixmapCache:
@@ -219,6 +221,8 @@ class MangaGraphicsView(QGraphicsView):
         self.setDragMode(QGraphicsView.NoDrag)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setHorizontalScrollMode(QGraphicsView.ScrollPerPixel)
+        self.setVerticalScrollMode(QGraphicsView.ScrollPerPixel)
         self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
         self.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing, True)
         self.setBackgroundBrush(Qt.white)
@@ -231,6 +235,12 @@ class MangaGraphicsView(QGraphicsView):
         if event.modifiers() & Qt.ControlModifier:
             steps = event.angleDelta().y() / 120.0
             self.set_zoom(self._zoom * math.pow(1.12, steps))
+            event.accept()
+            return
+        delta = event.angleDelta().y()
+        if delta:
+            bar = self.verticalScrollBar()
+            bar.setValue(bar.value() - int(delta * 0.9))
             event.accept()
             return
         super().wheelEvent(event)
@@ -360,6 +370,15 @@ class HdMangaReaderWindow(QWidget):
         self.toolbar.addWidget(self.status_label)
         layout.addWidget(self.toolbar)
         layout.addWidget(self.view, 1)
+        self.loading_overlay = QLabel(self.view.viewport())
+        self.loading_overlay.setAlignment(Qt.AlignCenter)
+        self.loading_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.loading_overlay.setStyleSheet("background:transparent;")
+        self.loading_movie: Optional[QMovie] = None
+        if READER_LOADING_MOVIE_PATH.exists():
+            self.loading_movie = QMovie(str(READER_LOADING_MOVIE_PATH), QByteArray(), self)
+            self.loading_movie.setScaledSize(QSize(210, 190))
+            self.loading_overlay.setMovie(self.loading_movie)
         self.view.verticalScrollBar().valueChanged.connect(self.update_current_page)
         self.apply_reader_style()
         self.show_loading_message("准备中")
@@ -430,21 +449,30 @@ class HdMangaReaderWindow(QWidget):
                 outline:0;
             }
             QGraphicsView {
-                background:#f1f5f9;
+                background:#f8fafc;
                 border:0;
             }
             QScrollBar:vertical, QScrollBar:horizontal {
-                background:#f8fafc;
+                background:transparent;
                 border:0;
-                width:12px;
-                height:12px;
+                width:10px;
+                height:10px;
             }
             QScrollBar::handle {
-                background:#cbd5e1;
-                border-radius:6px;
+                background:#b7c3d4;
+                border-radius:5px;
+                min-height:44px;
+                min-width:44px;
             }
             QScrollBar::handle:hover {
-                background:#94a3b8;
+                background:#74869e;
+            }
+            QScrollBar::add-line, QScrollBar::sub-line {
+                width:0;
+                height:0;
+            }
+            QScrollBar::add-page, QScrollBar::sub-page {
+                background:transparent;
             }
             """
         )
@@ -454,6 +482,7 @@ class HdMangaReaderWindow(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self.position_loading_overlay()
         if self.auto_fit_width:
             self.schedule_fit_width()
 
@@ -524,6 +553,7 @@ class HdMangaReaderWindow(QWidget):
     def add_pixmap(self, index: int, pixmap: QPixmap) -> None:
         if self._closed or pixmap.isNull():
             return
+        self.hide_loading_overlay()
         placeholder = self.placeholders.pop(index, None)
         if placeholder is not None:
             self.scene.removeItem(placeholder)
@@ -824,8 +854,34 @@ class HdMangaReaderWindow(QWidget):
     def show_loading_message(self, message: str) -> None:
         self.status_label.setText(message)
         self.scene.clear()
-        self.scene.addText(message)
         self.scene.setSceneRect(0, 0, max(520, self.view.viewport().width()), max(320, self.view.viewport().height()))
+        self.show_loading_overlay()
+
+    def show_loading_overlay(self) -> None:
+        self.position_loading_overlay()
+        self.loading_overlay.show()
+        self.loading_overlay.raise_()
+        if self.loading_movie:
+            self.loading_movie.start()
+        else:
+            self.loading_overlay.setText("Loading")
+
+    def hide_loading_overlay(self) -> None:
+        if self.loading_movie:
+            self.loading_movie.stop()
+        self.loading_overlay.hide()
+
+    def position_loading_overlay(self) -> None:
+        if not hasattr(self, "loading_overlay"):
+            return
+        viewport = self.view.viewport().rect()
+        width, height = 260, 230
+        self.loading_overlay.setGeometry(
+            max(0, (viewport.width() - width) // 2),
+            max(0, (viewport.height() - height) // 2),
+            width,
+            height,
+        )
 
     def forget_decode_worker(self, worker: DecodeWorker) -> None:
         if worker in self.decode_workers:

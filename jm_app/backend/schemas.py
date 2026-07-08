@@ -51,6 +51,7 @@ class DownloadSettings(NetworkSettings):
     use_jmcomic: bool = True
     reading_mode: str = "scroll"
     cache_as_webp: bool = False
+    protocol_parser: bool = True
 
 
 class SearchResponse(BaseModel):

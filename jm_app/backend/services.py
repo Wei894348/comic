@@ -12,7 +12,7 @@ from typing import Dict, Iterable, List, Optional
 from .cache_db import ComicCacheDB
 from .constants import DEFAULT_USER_AGENT, LIST_URL
 from .cookie_store import load_cookie_header
-from .jm_api import JmApiClient, parse_jm_id
+from .jm_api import JmApiClient, PhotoDetail, parse_jm_id
 from .jmcomic_defaults import jmcomic_default_cookie_header
 from .models import AlbumMeta, ChapterMeta, DownloadConfig, NetworkConfig
 from .pdf_utils import collect_images, images_to_pdf
@@ -114,6 +114,7 @@ def download_config(settings: Optional[DownloadSettings] = None) -> DownloadConf
         use_jmcomic=source.use_jmcomic,
         reading_mode=source.reading_mode,
         cache_as_webp=source.cache_as_webp,
+        protocol_parser=source.protocol_parser,
     )
 
 
@@ -293,12 +294,14 @@ class DownloadJob:
 
         album_dir = self.config.output_dir / f"JM{album.album_id}-{safe_name(album.title, album.album_id)}"
         album_dir.mkdir(parents=True, exist_ok=True)
+        protocol_photos = self._prefetch_protocol_photos(client, album, chapters, cache_db)
         for chapter in chapters:
             if self.cancel_event.is_set():
                 return []
-            self._download_chapter(client, album, chapter, album_dir, cache_db)
+            self._download_chapter(client, album, chapter, album_dir, cache_db, protocol_photos.get(chapter.chapter_id))
             self.increment_done()
-            client.sleep()
+            if not self.config.protocol_parser:
+                client.sleep()
 
         if self.config.output_format == "images":
             outputs = [album_dir]
@@ -313,7 +316,52 @@ class DownloadJob:
             shutil.rmtree(album_dir, ignore_errors=True)
         return outputs
 
-    def _download_chapter(self, client: JmApiClient, album: AlbumMeta, chapter: ChapterMeta, album_dir: Path, cache_db: ComicCacheDB):
+    def _prefetch_protocol_photos(
+        self,
+        client: JmApiClient,
+        album: AlbumMeta,
+        chapters: List[ChapterMeta],
+        cache_db: ComicCacheDB,
+    ) -> Dict[str, PhotoDetail]:
+        if not self.config.protocol_parser or len(chapters) <= 1:
+            return {}
+        pending = [chapter for chapter in chapters if not self._chapter_cached(cache_db, chapter)]
+        if len(pending) <= 1:
+            return {}
+        api_domains = client._get_api_domains()
+        max_workers = min(max(1, self.config.detail_threads), len(pending))
+        self.log(f"Protocol parser prefetch: {len(pending)} chapters, workers={max_workers}")
+
+        def load_one(chapter: ChapterMeta):
+            worker_client = JmApiClient(self.config, self.log, self.cancel_event)
+            worker_client._api_domains = list(api_domains)
+            worker_client._domains_initialized = True
+            return chapter.chapter_id, worker_client.get_photo_detail(chapter.chapter_id, album, fetch_scramble=True)
+
+        photos: Dict[str, PhotoDetail] = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(load_one, chapter): chapter for chapter in pending}
+            for future in as_completed(futures):
+                if self.cancel_event.is_set():
+                    break
+                chapter_id, photo = future.result()
+                photos[chapter_id] = photo
+        return photos
+
+    @staticmethod
+    def _chapter_cached(cache_db: ComicCacheDB, chapter: ChapterMeta) -> bool:
+        cached_path = cache_db.cached_chapter_path(chapter.chapter_id)
+        return bool(cached_path and collect_images(cached_path))
+
+    def _download_chapter(
+        self,
+        client: JmApiClient,
+        album: AlbumMeta,
+        chapter: ChapterMeta,
+        album_dir: Path,
+        cache_db: ComicCacheDB,
+        photo: Optional[PhotoDetail] = None,
+    ):
         chapter_name = f"{chapter.index:03d}-{safe_name(chapter.title, chapter.chapter_id)}"
         chapter_dir = album_dir / chapter_name
         cached_path = cache_db.cached_chapter_path(chapter.chapter_id)
@@ -323,7 +371,8 @@ class DownloadJob:
             self.log(f"跳过已缓存章节：{chapter.title}")
             return
 
-        photo = client.get_photo_detail(chapter.chapter_id, album, fetch_scramble=True)
+        if photo is None:
+            photo = client.get_photo_detail(chapter.chapter_id, album, fetch_scramble=True)
         if not photo.images:
             self.log(f"未在章节 {chapter.title} 找到图片。")
             return

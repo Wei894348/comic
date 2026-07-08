@@ -25,7 +25,7 @@ from PyQt5.QtCore import (
     QUrl,
     pyqtSignal,
 )
-from PyQt5.QtGui import QDesktopServices, QFontMetrics, QImageReader, QMovie, QPixmap
+from PyQt5.QtGui import QDesktopServices, QFontMetrics, QImageReader, QKeySequence, QMovie, QPixmap
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PyQt5.QtWidgets import (
     QAbstractItemView,
@@ -60,6 +60,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QSizePolicy,
+    QShortcut,
 )
 
 from .app_icon import APP_DISPLAY_NAME, app_icon
@@ -837,6 +838,8 @@ class MainWindow(QMainWindow):
         self.download_workers: Dict[str, DownloadWorker] = {}
         self.download_totals: Dict[str, int] = {}
         self.download_done_counts: Dict[str, int] = {}
+        self.download_percent_by_id: Dict[str, int] = {}
+        self.last_global_download_percent = 0
         self.download_progress_pending = set()
         self.download_transfer_pending = set()
         self.download_bytes: Dict[str, int] = {}
@@ -893,6 +896,7 @@ class MainWindow(QMainWindow):
             | Qt.WindowCloseButtonHint
         )
         self._apply_style()
+        self.setup_shortcuts()
         self._center_window()
 
     def _apply_style(self):
@@ -990,20 +994,24 @@ class MainWindow(QMainWindow):
                 background: transparent;
             }}
             QScrollBar:vertical, QScrollBar:horizontal {{
-                background:#f8fafc;
+                background:transparent;
                 border:0;
-                width:12px;
-                height:12px;
+                width:10px;
+                height:10px;
             }}
             QScrollBar::handle {{
-                background:#cbd5e1;
-                border-radius:6px;
-                min-height:36px;
+                background:#b7c3d4;
+                border-radius:5px;
+                min-height:42px;
+                min-width:42px;
             }}
-            QScrollBar::handle:hover {{ background:#94a3b8; }}
+            QScrollBar::handle:hover {{ background:#74869e; }}
             QScrollBar::add-line, QScrollBar::sub-line {{
                 width:0;
                 height:0;
+            }}
+            QScrollBar::add-page, QScrollBar::sub-page {{
+                background:transparent;
             }}
             QProgressBar {{
                 border:1px solid #d9e3ef;
@@ -1016,6 +1024,7 @@ class MainWindow(QMainWindow):
             QProgressBar::chunk {{
                 border-radius:7px;
                 background:#2f80ed;
+                margin:1px;
             }}
             QMenu {{
                 background:#ffffff;
@@ -1275,6 +1284,7 @@ class MainWindow(QMainWindow):
                 "make_pdf": self.make_pdf.isChecked(),
                 "keep_images": self.keep_images.isChecked(),
                 "cache_as_webp": self.cache_as_webp.isChecked() if hasattr(self, "cache_as_webp") else False,
+                "protocol_parser": self.protocol_parser.isChecked() if hasattr(self, "protocol_parser") else True,
                 "detail_check": self.detail_check.isChecked() if hasattr(self, "detail_check") else False,
                 "reading_mode": self.reading_mode_combo.currentData() if hasattr(self, "reading_mode_combo") else "scroll",
                 "cookie": self.cookie_edit.toPlainText().strip() if hasattr(self, "cookie_edit") else "",
@@ -1306,6 +1316,8 @@ class MainWindow(QMainWindow):
             self.keep_images.setChecked(bool(self.settings_cache.get("keep_images", True)))
             if hasattr(self, "cache_as_webp"):
                 self.cache_as_webp.setChecked(bool(self.settings_cache.get("cache_as_webp", False)))
+            if hasattr(self, "protocol_parser"):
+                self.protocol_parser.setChecked(bool(self.settings_cache.get("protocol_parser", True)))
             if hasattr(self, "detail_check"):
                 self.detail_check.setChecked(bool(self.settings_cache.get("detail_check", False)))
             if hasattr(self, "reading_mode_combo"):
@@ -1346,7 +1358,7 @@ class MainWindow(QMainWindow):
             return
         for button in getattr(self, "format_buttons", {}).values():
             button.toggled.connect(self.schedule_settings_save)
-        for checkbox in [self.make_pdf, self.keep_images, getattr(self, "cache_as_webp", None), self.stop_on_block, getattr(self, "detail_check", None)]:
+        for checkbox in [self.make_pdf, self.keep_images, getattr(self, "cache_as_webp", None), getattr(self, "protocol_parser", None), self.stop_on_block, getattr(self, "detail_check", None)]:
             if checkbox:
                 checkbox.toggled.connect(self.schedule_settings_save)
         for edit in [self.ua_edit, self.proxy_edit, self.output_edit]:
@@ -1732,6 +1744,27 @@ class MainWindow(QMainWindow):
         except RuntimeError:
             pass
 
+    def setup_shortcuts(self):
+        QShortcut(QKeySequence("Ctrl+F"), self, activated=self.focus_search_box)
+        QShortcut(QKeySequence("Ctrl+L"), self, activated=self.focus_id_box)
+        QShortcut(QKeySequence("Ctrl+R"), self, activated=self.update_current_results)
+        QShortcut(QKeySequence("Ctrl+Return"), self, activated=self.quick_start_download)
+        QShortcut(QKeySequence("Ctrl+Enter"), self, activated=self.quick_start_download)
+        if hasattr(self, "search_edit"):
+            self.search_edit.returnPressed.connect(self.start_scrape)
+        if hasattr(self, "id_edit"):
+            self.id_edit.returnPressed.connect(self.start_scrape)
+
+    def focus_search_box(self):
+        self.switch_page(self.home_page_index())
+        self.search_edit.setFocus(Qt.ShortcutFocusReason)
+        self.search_edit.selectAll()
+
+    def focus_id_box(self):
+        self.switch_page(self.home_page_index())
+        self.id_edit.setFocus(Qt.ShortcutFocusReason)
+        self.id_edit.selectAll()
+
     def _build_app_page(self) -> QWidget:
         page = QWidget()
         page.setObjectName("appRoot")
@@ -1923,10 +1956,13 @@ class MainWindow(QMainWindow):
         self.keep_images.setChecked(True)
         self.cache_as_webp = QCheckBox("图片缓存转 WebP")
         self.cache_as_webp.setChecked(False)
+        self.protocol_parser = QCheckBox("协议解析加速")
+        self.protocol_parser.setChecked(True)
         download_options = QHBoxLayout()
         download_options.addWidget(self.make_pdf)
         download_options.addWidget(self.keep_images)
         download_options.addWidget(self.cache_as_webp)
+        download_options.addWidget(self.protocol_parser)
         download_options.addStretch()
 
         self.cookie_edit = QTextEdit()
@@ -2128,9 +2164,12 @@ class MainWindow(QMainWindow):
         self.make_pdf.setChecked(False)
         self.keep_images = QCheckBox("保留图片目录")
         self.keep_images.setChecked(True)
+        self.protocol_parser = QCheckBox("协议解析加速")
+        self.protocol_parser.setChecked(True)
         pdf_row.addWidget(self.make_pdf)
         pdf_row.addWidget(self.keep_images)
         layout.addLayout(pdf_row)
+        layout.addWidget(self.protocol_parser)
 
         self.detail_check = QCheckBox("进入详情页获取章节")
         self.detail_check.setChecked(False)
@@ -2480,6 +2519,8 @@ class MainWindow(QMainWindow):
         read_btn.clicked.connect(self.open_selected_history_reading)
         open_dir_btn = QPushButton("打开位置")
         open_dir_btn.clicked.connect(self.open_selected_history_location)
+        delete_btn = QPushButton("删除选中")
+        delete_btn.clicked.connect(self.delete_selected_history_record)
         clear_btn = QPushButton("清空历史")
         clear_btn.clicked.connect(self.clear_download_history)
         header.addWidget(title)
@@ -2488,6 +2529,7 @@ class MainWindow(QMainWindow):
         header.addWidget(self.history_read_mode_combo)
         header.addWidget(open_dir_btn)
         header.addWidget(read_btn)
+        header.addWidget(delete_btn)
         header.addWidget(clear_btn)
         layout.addLayout(header)
 
@@ -2507,6 +2549,7 @@ class MainWindow(QMainWindow):
     def refresh_history_table(self):
         if not hasattr(self, "history_cards_layout"):
             return
+        self.sync_history_with_local_files()
         self.history_card_by_index.clear()
         while self.history_cards_layout.count() > 1:
             item = self.history_cards_layout.takeAt(0)
@@ -2712,23 +2755,155 @@ class MainWindow(QMainWindow):
         elif action == delete_action:
             self.delete_history_record(index)
 
-    def delete_history_record(self, index: int):
+    def delete_history_record(self, index: int, confirm: bool = True):
         if index < 0 or index >= len(self.download_history):
             return
-        record = self.download_history.pop(index)
+        record = self.download_history[index]
         title = record.get("title") or record.get("file") or record.get("path") or "历史记录"
+        local_paths = self.history_record_local_paths(record)
+        if confirm:
+            message = f"确定删除历史记录并删除本地漫画资源吗？\n\n{title}"
+            if local_paths:
+                message += "\n\n将删除：\n" + "\n".join(str(path) for path in local_paths[:6])
+                if len(local_paths) > 6:
+                    message += f"\n... 共 {len(local_paths)} 个路径"
+            else:
+                message += "\n\n没有找到对应的本地文件，只会删除历史记录。"
+            answer = QMessageBox.question(self, "删除本地漫画", message)
+            if answer != QMessageBox.Yes:
+                return
+        self.download_history.pop(index)
+        deleted, failed = self.delete_history_local_paths(local_paths)
         if self.selected_history_index == index:
             self.selected_history_index = -1
         elif self.selected_history_index > index:
             self.selected_history_index -= 1
-        self.log(f"已删除历史记录：{title}")
+        if failed:
+            self.log(f"历史记录已删除，本地资源部分删除失败：{title}，失败 {len(failed)} 个。")
+            QMessageBox.warning(self, "部分删除失败", "\n".join(f"{path}: {error}" for path, error in failed[:8]))
+        else:
+            self.log(f"已删除历史记录和本地资源：{title}，删除 {deleted} 个路径。")
         self.refresh_history_table()
         self.save_local_cache()
 
+    def delete_selected_history_record(self):
+        if self.selected_history_index < 0 or self.selected_history_index >= len(self.download_history):
+            QMessageBox.information(self, "提示", "请先选择一条历史记录。")
+            return
+        self.delete_history_record(self.selected_history_index)
+
     def clear_download_history(self):
+        if not self.download_history:
+            return
+        answer = QMessageBox.question(
+            self,
+            "清空历史和本地漫画",
+            f"确定清空全部 {len(self.download_history)} 条历史记录，并删除这些历史对应的本地漫画资源吗？",
+        )
+        if answer != QMessageBox.Yes:
+            return
+        all_paths = []
+        for record in self.download_history:
+            all_paths.extend(self.history_record_local_paths(record))
+        deleted, failed = self.delete_history_local_paths(all_paths)
         self.download_history.clear()
+        self.selected_history_index = -1
         self.refresh_history_table()
         self.save_local_cache()
+        if failed:
+            QMessageBox.warning(self, "部分删除失败", "\n".join(f"{path}: {error}" for path, error in failed[:8]))
+        self.log(f"已清空历史记录并删除本地资源：删除 {deleted} 个路径，失败 {len(failed)} 个。")
+
+    def sync_history_with_local_files(self):
+        if getattr(self, "_syncing_history_files", False):
+            return
+        self._syncing_history_files = True
+        try:
+            kept = []
+            removed = 0
+            for record in self.download_history:
+                if self.history_record_has_local_file(record):
+                    kept.append(record)
+                else:
+                    removed += 1
+            if removed:
+                self.download_history = kept
+                self.selected_history_index = -1
+                self.save_local_cache()
+                self.log(f"已同步历史记录：移除本地文件不存在的记录 {removed} 条。")
+        finally:
+            self._syncing_history_files = False
+
+    def history_record_has_local_file(self, record: Dict[str, str]) -> bool:
+        return any(path.exists() for path in self.history_record_local_paths(record))
+
+    def history_record_local_paths(self, record: Dict[str, str]) -> List[Path]:
+        candidates: List[Path] = []
+        for key in ("path", "pdf_path", "image_dir"):
+            value = record.get(key) or ""
+            if value:
+                candidates.append(Path(value).expanduser())
+        outputs = record.get("outputs") or []
+        if isinstance(outputs, list):
+            candidates.extend(Path(str(value)).expanduser() for value in outputs if str(value).strip())
+        for candidate in list(candidates):
+            image_dir = self.resolve_history_image_dir(candidate)
+            if image_dir:
+                candidates.append(image_dir)
+
+        unique: List[Path] = []
+        seen = set()
+        for path in candidates:
+            try:
+                normalized = str(path.resolve(strict=False)).lower()
+            except Exception:
+                normalized = str(path).lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            unique.append(path)
+        return unique
+
+    def delete_history_local_paths(self, paths: List[Path]) -> tuple[int, List[tuple[Path, str]]]:
+        deleted = 0
+        failed: List[tuple[Path, str]] = []
+        for path in self.sorted_delete_paths(paths):
+            if self.is_protected_runtime_path(path):
+                continue
+            if not path.exists():
+                continue
+            try:
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                deleted += 1
+            except Exception as exc:
+                failed.append((path, str(exc)))
+        return deleted, failed
+
+    def sorted_delete_paths(self, paths: List[Path]) -> List[Path]:
+        unique: Dict[str, Path] = {}
+        for path in paths:
+            try:
+                normalized = str(path.resolve(strict=False)).lower()
+            except Exception:
+                normalized = str(path).lower()
+            unique[normalized] = path
+        return sorted(unique.values(), key=lambda item: len(item.parts), reverse=True)
+
+    def is_protected_runtime_path(self, path: Path) -> bool:
+        try:
+            target = path.resolve(strict=False)
+            protected = {
+                self.data_root.resolve(strict=False),
+                self.default_output_dir.resolve(strict=False),
+                self.reader_cache_root().resolve(strict=False),
+                self.cache_file.parent.resolve(strict=False),
+            }
+            return target in protected
+        except Exception:
+            return False
 
     def selected_history_record(self) -> Optional[Dict[str, str]]:
         if not self.download_history:
@@ -3047,6 +3222,8 @@ class MainWindow(QMainWindow):
             button = getattr(self, "nav_buttons", {}).get(index)
             if button:
                 button.setChecked(True)
+            if index == self.history_page_index():
+                self.refresh_history_table()
             self.animate_enter(self.main_content_stack.currentWidget(), 220, offset_y=14, scale_px=5)
             return
         self._fade_in(self.app_page, 160)
@@ -3440,6 +3617,7 @@ class MainWindow(QMainWindow):
             password=self.session_password,
             proxy=self.proxy_edit.text().strip(),
             detail_threads=self.detail_threads.value(),
+            protocol_parser=self.protocol_parser.isChecked() if hasattr(self, "protocol_parser") else True,
         )
 
     def download_config(self) -> DownloadConfig:
@@ -3463,6 +3641,7 @@ class MainWindow(QMainWindow):
             keep_images=self.keep_images.isChecked(),
             reading_mode=self.reading_mode_combo.currentData() if hasattr(self, "reading_mode_combo") else "scroll",
             cache_as_webp=self.cache_as_webp.isChecked() if hasattr(self, "cache_as_webp") else False,
+            protocol_parser=self.protocol_parser.isChecked() if hasattr(self, "protocol_parser") else True,
         )
 
     def background_download_config(self) -> DownloadConfig:
@@ -4816,6 +4995,7 @@ class MainWindow(QMainWindow):
             self.download_pending_queue = [copy.deepcopy(album) for album in self.queue if album.album_id not in active_ids]
         self.log(f"开始并发下载：等待 {len(self.download_pending_queue)} 本，最多同时 {self.max_parallel_downloads()} 本。")
         self.cancel_btn.setEnabled(True)
+        self.last_global_download_percent = 0
         if self.download_can_use_global_progress():
             self.set_backend_status("正在并发下载", "busy")
             self.progress.setRange(0, 100)
@@ -4842,6 +5022,7 @@ class MainWindow(QMainWindow):
         self.download_cancelled_ids.discard(album.album_id)
         self.download_totals[album.album_id] = max(1, self.queue_chapter_count(album))
         self.download_done_counts[album.album_id] = 0
+        self.download_percent_by_id[album.album_id] = 0
         self.download_bytes[album.album_id] = 0
         self.download_speeds[album.album_id] = 0.0
         worker.log.connect(self.log)
@@ -4870,7 +5051,7 @@ class MainWindow(QMainWindow):
             return
         self.current_download_album_id = album.album_id
         self.log(f"当前下载任务：{album.title}，正在解析图片列表。")
-        self.download_totals[album.album_id] = max(1, total)
+        self.download_totals[album.album_id] = max(self.download_totals.get(album.album_id, 1), max(1, total))
         self.download_done_counts.setdefault(album.album_id, 0)
         card = self.download_card_by_id.get(album.album_id)
         if card:
@@ -4880,7 +5061,9 @@ class MainWindow(QMainWindow):
             if status:
                 status.setText("下载中")
             if progress:
-                self.set_download_card_progress(progress, 0, max(1, total), "0%")
+                current_done = self.download_done_counts.get(album.album_id, 0)
+                current_total = self.download_totals.get(album.album_id, max(1, total))
+                self.set_download_card_progress(progress, current_done, current_total, f"{self.download_percent(current_done, current_total)}%")
             if sub:
                 sub.setText(f"ID：{album.album_id}    图片：0 / {max(1, total)}")
 
@@ -4890,7 +5073,11 @@ class MainWindow(QMainWindow):
         self.current_download_album_id = album.album_id
         if done == 0 or done == total or done % 10 == 0:
             self.log(f"下载进度：{album.title} {done}/{max(1, total)} 张图片。")
-        self.download_totals[album.album_id] = max(1, total)
+        prev_total = self.download_totals.get(album.album_id, 1)
+        prev_done = self.download_done_counts.get(album.album_id, 0)
+        total = max(prev_total, max(1, total))
+        done = max(prev_done, min(done, total))
+        self.download_totals[album.album_id] = total
         self.download_done_counts[album.album_id] = done
         self.flush_download_card_progress(copy.deepcopy(album), done, total)
 
@@ -4998,6 +5185,7 @@ class MainWindow(QMainWindow):
     def cleanup_download_album_state(self, album_id: str):
         self.download_totals.pop(album_id, None)
         self.download_done_counts.pop(album_id, None)
+        self.download_percent_by_id.pop(album_id, None)
         self.download_bytes.pop(album_id, None)
         self.download_speeds.pop(album_id, None)
         self.download_progress_pending.discard(album_id)
@@ -5015,6 +5203,7 @@ class MainWindow(QMainWindow):
         self.current_download_album_id = ""
         self.cancel_btn.setEnabled(False)
         self.download_cancelled_ids.clear()
+        self.last_global_download_percent = 0
         self.set_backend_status("下载完成", "ok")
         self.log("全部下载任务完成。")
         self.update_download_summary()
@@ -5052,18 +5241,35 @@ class MainWindow(QMainWindow):
         return not self.is_loading_busy() and not (self.incremental_worker and self.incremental_worker.isRunning())
 
     def set_download_card_progress(self, progress: QProgressBar, done: int, total: int, text: Optional[str] = None):
+        album_id = ""
+        parent = progress.parent()
+        while parent is not None:
+            album_id = str(parent.property("album_id") or "")
+            if album_id:
+                break
+            parent = parent.parent()
         percent = self.download_percent(done, total)
+        if album_id:
+            percent = max(self.download_percent_by_id.get(album_id, 0), percent)
+            self.download_percent_by_id[album_id] = percent
         progress.setRange(0, 100)
-        progress.setValue(percent)
-        progress.setFormat(text or f"{percent}%")
+        if progress.value() != percent:
+            progress.setValue(percent)
+        next_format = text or f"{percent}%"
+        if progress.format() != next_format:
+            progress.setFormat(next_format)
 
     def update_download_summary(self):
         total = sum(self.download_totals.values())
         done = sum(min(self.download_done_counts.get(album_id, 0), total_count) for album_id, total_count in self.download_totals.items())
         percent = self.download_percent(done, total)
         if self.download_can_use_global_progress():
+            if self.download_workers or self.download_pending_queue:
+                percent = max(self.last_global_download_percent, percent)
+                self.last_global_download_percent = percent
             self.progress.setRange(0, 100)
-            self.progress.setValue(percent)
+            if self.progress.value() != percent:
+                self.progress.setValue(percent)
             self.progress.setFormat(f"总进度 {percent}%")
         if hasattr(self, "queue_status_label"):
             self.queue_status_label.setText(self.download_status_text())

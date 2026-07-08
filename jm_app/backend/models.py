@@ -42,6 +42,7 @@ class NetworkConfig:
     password: str = ""
     proxy: str = ""
     detail_threads: int = 6
+    protocol_parser: bool = True
 
 
 @dataclass
@@ -54,3 +55,4 @@ class DownloadConfig(NetworkConfig):
     use_jmcomic: bool = True
     reading_mode: str = "scroll"
     cache_as_webp: bool = False
+    protocol_parser: bool = True

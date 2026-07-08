@@ -6,12 +6,12 @@ import random
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from .cache_db import ComicCacheDB
-from .jm_api import JmApiClient, parse_jm_id
+from .jm_api import JmApiClient, PhotoDetail, parse_jm_id
 from .models import AlbumMeta, ChapterMeta, DownloadConfig, NetworkConfig
 from .pdf_utils import collect_images, images_to_pdf
 from .utils import safe_name
@@ -87,7 +87,10 @@ class ScrapeWorker(QThread):
 
             total = len(albums)
             self.progress.emit(0, total)
-            if self.include_detail:
+            detail_prefetch = self.include_detail or getattr(self.config, "protocol_parser", True)
+            if detail_prefetch:
+                if getattr(self.config, "protocol_parser", True):
+                    self.log.emit(f"Protocol parser metadata prefetch: {total} albums, workers={self._detail_threads(total)}")
                 self.log.emit(f"正在并发加载详情，线程数：{self._detail_threads(total)}")
                 self._emit_parallel_details([album.album_id for album in albums], api_domains)
             else:
@@ -332,6 +335,7 @@ class DownloadWorker(QThread):
         album_dir = self.config.output_dir / f"JM{album.album_id}-{safe_name(album.title, album.album_id)}"
         album_dir.mkdir(parents=True, exist_ok=True)
         self._start_album_transfer(album, album_dir)
+        protocol_photos = self._prefetch_protocol_photos(client, album, chapters, cache_db)
 
         output_paths: List[Path] = []
         chapter_done = 0
@@ -339,10 +343,11 @@ class DownloadWorker(QThread):
         for chapter in chapters:
             if self.cancel_event.is_set():
                 return output_paths
-            self._download_chapter(client, album, chapter, album_dir, cache_db)
+            self._download_chapter(client, album, chapter, album_dir, cache_db, protocol_photos.get(chapter.chapter_id))
             chapter_done += 1
             self._emit_global_chapter_done(album, chapter_done, chapter_total)
-            client.sleep()
+            if not self.config.protocol_parser:
+                client.sleep()
 
         if self.config.output_format == "images":
             output_paths.append(album_dir)
@@ -371,6 +376,43 @@ class DownloadWorker(QThread):
         self._global_chapters_total = max(1, self._global_chapters_total + actual_total - estimated_total)
         self.progress.emit(self._global_chapters_done, self._global_chapters_total)
 
+    def _prefetch_protocol_photos(
+        self,
+        client: JmApiClient,
+        album: AlbumMeta,
+        chapters: List[ChapterMeta],
+        cache_db: ComicCacheDB,
+    ) -> Dict[str, PhotoDetail]:
+        if not self.config.protocol_parser or len(chapters) <= 1:
+            return {}
+        pending = [chapter for chapter in chapters if not self._chapter_cached(cache_db, chapter)]
+        if len(pending) <= 1:
+            return {}
+        api_domains = client._get_api_domains()
+        max_workers = min(max(1, self.config.detail_threads), len(pending))
+        self.log.emit(f"Protocol parser prefetch: {len(pending)} chapters, workers={max_workers}")
+
+        def load_one(chapter: ChapterMeta):
+            worker_client = JmApiClient(self.config, self.log.emit, self.cancel_event)
+            worker_client._api_domains = list(api_domains)
+            worker_client._domains_initialized = True
+            return chapter.chapter_id, worker_client.get_photo_detail(chapter.chapter_id, album, fetch_scramble=True)
+
+        photos: Dict[str, PhotoDetail] = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(load_one, chapter): chapter for chapter in pending}
+            for future in as_completed(futures):
+                if self.cancel_event.is_set():
+                    break
+                chapter_id, photo = future.result()
+                photos[chapter_id] = photo
+        return photos
+
+    @staticmethod
+    def _chapter_cached(cache_db: ComicCacheDB, chapter: ChapterMeta) -> bool:
+        cached_path = cache_db.cached_chapter_path(chapter.chapter_id)
+        return bool(cached_path and collect_images(cached_path))
+
     def _download_chapter(
         self,
         client: JmApiClient,
@@ -378,6 +420,7 @@ class DownloadWorker(QThread):
         chapter: ChapterMeta,
         album_dir: Path,
         cache_db: ComicCacheDB,
+        photo: Optional[PhotoDetail] = None,
     ):
         chapter_name = f"{chapter.index:03d}-{safe_name(chapter.title, chapter.chapter_id)}"
         chapter_dir = album_dir / chapter_name
@@ -392,7 +435,8 @@ class DownloadWorker(QThread):
             self.log.emit(f"跳过已缓存章节：{chapter.title}")
             return
 
-        photo = client.get_photo_detail(chapter.chapter_id, album, fetch_scramble=True)
+        if photo is None:
+            photo = client.get_photo_detail(chapter.chapter_id, album, fetch_scramble=True)
         if not photo.images:
             self.log.emit(f"未在章节 {chapter.title} 找到图片。")
             return
