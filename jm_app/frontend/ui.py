@@ -25,7 +25,7 @@ from PyQt5.QtCore import (
     QUrl,
     pyqtSignal,
 )
-from PyQt5.QtGui import QDesktopServices, QFontMetrics, QImageReader, QKeySequence, QMovie, QPixmap
+from PyQt5.QtGui import QDesktopServices, QFontMetrics, QImageReader, QKeySequence, QMovie, QPainter, QPixmap
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PyQt5.QtWidgets import (
     QAbstractItemView,
@@ -4120,7 +4120,7 @@ class MainWindow(QMainWindow):
         card.setObjectName("albumCard")
         card_width = self.result_card_width()
         cover_width = max(112, min(148, card_width - 26))
-        cover_height = int(cover_width * 1.32)
+        cover_height = int(cover_width * 4 / 3)
         card_height = cover_height + 78
         card.setFixedSize(card_width, card_height)
         card.setCursor(Qt.PointingHandCursor)
@@ -4633,12 +4633,17 @@ class MainWindow(QMainWindow):
         try:
             MainWindow.stop_label_movie(label)
             target = label.size()
-            scaled = pixmap.scaled(target, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            if scaled.width() > target.width() or scaled.height() > target.height():
-                x = max(0, (scaled.width() - target.width()) // 2)
-                y = max(0, (scaled.height() - target.height()) // 2)
-                scaled = scaled.copy(x, y, target.width(), target.height())
-            label.setPixmap(scaled)
+            if target.isEmpty() or pixmap.isNull():
+                return
+            scaled = pixmap.scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            canvas = QPixmap(target)
+            canvas.fill(Qt.transparent)
+            painter = QPainter(canvas)
+            x = max(0, (target.width() - scaled.width()) // 2)
+            y = max(0, (target.height() - scaled.height()) // 2)
+            painter.drawPixmap(x, y, scaled)
+            painter.end()
+            label.setPixmap(canvas)
             label.setText("")
         except RuntimeError:
             pass
