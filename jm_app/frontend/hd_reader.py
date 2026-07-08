@@ -273,7 +273,7 @@ class MangaGraphicsView(QGraphicsView):
         super().mouseReleaseEvent(event)
 
     def set_zoom(self, zoom: float) -> None:
-        zoom = max(0.2, min(5.0, zoom))
+        zoom = max(0.01, min(5.0, zoom))
         factor = zoom / self._zoom
         self._zoom = zoom
         self.scale(factor, factor)
@@ -586,7 +586,7 @@ class HdMangaReaderWindow(QWidget):
                 continue
             width, height = self.page_sizes.get(index, (800, 1100))
             max_width = max(max_width, width)
-        scene_width = max(max_width, self.last_scene_width, int(self.view.viewport().width() / max(self.view.zoom, 0.1)))
+        scene_width = max(max_width, self.last_scene_width, int(self.view.viewport().width() / max(self.view.zoom, 0.01)))
         self.last_scene_width = scene_width
         y = 0
         for index in range(1, self.page_count + 1):
@@ -617,7 +617,7 @@ class HdMangaReaderWindow(QWidget):
         self.view.reset_zoom()
         margin = 18
         target_width = max(1, self.view.viewport().width() - margin)
-        scale = max(0.15, min(1.0, target_width / rect.width()))
+        scale = max(0.01, min(1.0, target_width / rect.width()))
         self.view.set_zoom(scale)
 
     def apply_default_zoom(self) -> None:

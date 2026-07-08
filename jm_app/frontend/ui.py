@@ -5291,30 +5291,9 @@ class MainWindow(QMainWindow):
 
         image_dir = self.resolve_completed_image_dir(album, path)
         pdf_record_path = str(path) if path.suffix.lower() == ".pdf" else ""
-        existing_index = self.find_history_index_for_album(album.album_id)
-        outputs: List[str] = []
+        existing_index = self.find_history_index_for_output(path)
         if existing_index >= 0:
-            old_record = self.download_history.pop(existing_index)
-            old_outputs = old_record.get("outputs") or []
-            if isinstance(old_outputs, list):
-                outputs.extend(str(value) for value in old_outputs if str(value).strip())
-            old_path = old_record.get("path") or ""
-            if old_path:
-                outputs.append(str(old_path))
-            if not pdf_record_path:
-                pdf_record_path = old_record.get("pdf_path") or ""
-            if image_dir is None:
-                old_image_dir = old_record.get("image_dir") or ""
-                image_dir = Path(old_image_dir).expanduser() if old_image_dir else None
-        outputs.append(str(path))
-        deduped_outputs = []
-        seen_outputs = set()
-        for value in outputs:
-            key = self.normalized_history_path(Path(value).expanduser())
-            if key in seen_outputs:
-                continue
-            seen_outputs.add(key)
-            deduped_outputs.append(value)
+            self.download_history.pop(existing_index)
         record = {
             "title": album.title,
             "file": path.name,
@@ -5325,7 +5304,7 @@ class MainWindow(QMainWindow):
             "cover_url": album.cover_url,
             "format": path.suffix.lstrip(".") or self.selected_output_format(),
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "outputs": deduped_outputs,
+            "outputs": [str(path)],
         }
         self.download_history.append(record)
         self.selected_history_index = len(self.download_history) - 1
@@ -5345,6 +5324,18 @@ class MainWindow(QMainWindow):
         for index, record in enumerate(self.download_history):
             if str(record.get("album_id") or record.get("id") or "") == str(album_id):
                 return index
+        return -1
+
+    def find_history_index_for_output(self, output_path: Path) -> int:
+        target = self.normalized_history_path(output_path)
+        for index, record in enumerate(self.download_history):
+            paths = [record.get("path") or "", record.get("pdf_path") or "", record.get("image_dir") or ""]
+            outputs = record.get("outputs") or []
+            if isinstance(outputs, list):
+                paths.extend(str(value) for value in outputs)
+            for value in paths:
+                if value and self.normalized_history_path(Path(value).expanduser()) == target:
+                    return index
         return -1
 
     def resolve_completed_image_dir(self, album: AlbumMeta, output_path: Path) -> Optional[Path]:
