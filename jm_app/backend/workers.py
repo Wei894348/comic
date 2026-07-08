@@ -256,6 +256,7 @@ class DownloadWorker(QThread):
     progress = pyqtSignal(int, int)
     album_started = pyqtSignal(object, int)
     album_progress = pyqtSignal(object, int, int)
+    chapter_done = pyqtSignal(object, int, int)
     album_transfer = pyqtSignal(object, int, float)
     album_done = pyqtSignal(object)
     item_done = pyqtSignal(object, str)
@@ -272,6 +273,8 @@ class DownloadWorker(QThread):
         self._album_last_bytes: Dict[str, int] = {}
         self._album_last_time: Dict[str, float] = {}
         self._album_speeds: Dict[str, float] = {}
+        self._global_chapters_done = 0
+        self._global_chapters_total = 1
 
     def cancel(self):
         self.cancel_event.set()
@@ -280,7 +283,8 @@ class DownloadWorker(QThread):
         try:
             self.config.output_dir.mkdir(parents=True, exist_ok=True)
             total = max(1, sum(self._chapter_count(album) for album in self.albums))
-            done = 0
+            self._global_chapters_done = 0
+            self._global_chapters_total = total
             self.progress.emit(0, total)
 
             for album in self.albums:
@@ -293,8 +297,6 @@ class DownloadWorker(QThread):
                 self.album_done.emit(album)
                 for pdf_path in chapter_paths:
                     self.item_done.emit(album, str(pdf_path))
-                    done += 1
-                    self.progress.emit(done, total)
 
             self.finished_ok.emit()
         except Exception as exc:
@@ -306,6 +308,7 @@ class DownloadWorker(QThread):
         return max(1, len(album.chapters))
 
     def _download_album(self, album: AlbumMeta) -> List[Path]:
+        estimated_chapter_total = self._chapter_count(album)
         client = JmApiClient(self.config, self.log.emit, self.cancel_event)
         if album.album_id.lower().startswith("p"):
             detail = client.photo_as_album(album.album_id[1:])
@@ -320,6 +323,7 @@ class DownloadWorker(QThread):
             chapters = [chapter for chapter in chapters if chapter.chapter_id in wanted]
         if not chapters:
             chapters = [ChapterMeta(parse_jm_id(album.album_id), "全集", album.url, 1)]
+        self._adjust_global_chapter_total(estimated_chapter_total, len(chapters))
 
         self.log.emit(f"开始下载 {album.title}，章节数：{len(chapters)}")
         album_dir = self.config.output_dir / f"JM{album.album_id}-{safe_name(album.title, album.album_id)}"
@@ -336,6 +340,7 @@ class DownloadWorker(QThread):
             self._download_chapter(client, album, chapter, album_dir, cache_db)
             chapter_done += 1
             self.album_progress.emit(album, chapter_done, chapter_total)
+            self._emit_global_chapter_done(album, chapter_done, chapter_total)
             client.sleep()
 
         if self.config.output_format == "images":
@@ -351,6 +356,19 @@ class DownloadWorker(QThread):
             shutil.rmtree(album_dir, ignore_errors=True)
             self.log.emit(f"已删除图片目录：{album_dir}")
         return output_paths
+
+    def _emit_global_chapter_done(self, album: AlbumMeta, album_done: int, album_total: int):
+        self._global_chapters_done = min(self._global_chapters_total, self._global_chapters_done + 1)
+        self.progress.emit(self._global_chapters_done, self._global_chapters_total)
+        self.chapter_done.emit(album, album_done, album_total)
+
+    def _adjust_global_chapter_total(self, estimated_total: int, actual_total: int):
+        estimated_total = max(1, estimated_total)
+        actual_total = max(1, actual_total)
+        if estimated_total == actual_total:
+            return
+        self._global_chapters_total = max(1, self._global_chapters_total + actual_total - estimated_total)
+        self.progress.emit(self._global_chapters_done, self._global_chapters_total)
 
     def _download_chapter(
         self,
@@ -565,7 +583,15 @@ class ReaderWorker(QThread):
             max_workers = max(6, self.config.image_threads * 2) if self.fast_mode else max(4, self.config.image_threads)
             max_workers = min(12, max_workers)
             self.log.emit(f"阅读后台下载启动：{total} 张图片，线程数 {max_workers}")
-            next_index = 1
+            first_name = photo.images[0]
+            first_suffix = Path(first_name).suffix.lower()
+            first_path = cache_dir / f"{1:05d}{'.gif' if first_suffix == '.gif' else ('.webp' if self.config.cache_as_webp else '.png')}"
+            first_index, first_image_path = self._prepare_image(client, photo, 1, first_name, first_path)
+            done = 1
+            self.image_ready.emit(first_index, str(first_image_path))
+            self.progress.emit(done, total)
+
+            next_index = 2
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {}
 

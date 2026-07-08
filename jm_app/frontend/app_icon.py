@@ -3,6 +3,9 @@ from pathlib import Path
 
 from PyQt5.QtGui import QIcon
 
+APP_DISPLAY_NAME = "JM下载器"
+APP_ID = "jm.downloader.desktop"
+
 
 def resource_path(*parts: str) -> Path:
     if hasattr(sys, "_MEIPASS"):
@@ -31,7 +34,7 @@ def set_windows_app_id():
         import ctypes
 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "jm.comic.downloader"
+            APP_ID
         )
     except Exception:
         pass

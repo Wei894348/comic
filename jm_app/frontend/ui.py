@@ -62,7 +62,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
 )
 
-from .app_icon import app_icon
+from .app_icon import APP_DISPLAY_NAME, app_icon
 from ..backend.constants import DEFAULT_USER_AGENT, LIST_URL
 from ..backend.cookie_store import load_cookie_header, save_cookie_dict
 from ..backend.cache_db import ComicCacheDB
@@ -81,7 +81,7 @@ TEXT = "#1f2937"
 RESULT_ROWS = 2
 ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
 LOADING_MOVIE_PATH = ASSETS_DIR / "loading_runner.gif"
-APP_UI_VERSION = "1.0.0"
+APP_UI_VERSION = "1.0.1"
 
 
 def elide_label_text(label: QLabel, text: str, fallback_width: int = 220) -> None:
@@ -789,7 +789,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("JM 漫画下载器")
+        self.setWindowTitle(APP_DISPLAY_NAME)
         self.setWindowIcon(app_icon())
         self.resize(360, 500)
         self.setMinimumSize(330, 460)
@@ -1114,7 +1114,7 @@ class MainWindow(QMainWindow):
         header.setStyleSheet(f"background:{BLUE};")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(24, 0, 24, 0)
-        title = QLabel("JM 漫画下载器")
+        title = QLabel(APP_DISPLAY_NAME)
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("color:white;font-size:22px;font-weight:700;")
         title.setAttribute(Qt.WA_TransparentForMouseEvents, True)
@@ -1197,10 +1197,17 @@ class MainWindow(QMainWindow):
                     "title": str(item.get("title") or ""),
                     "file": str(item.get("file") or ""),
                     "path": str(item.get("path") or ""),
+                    "pdf_path": str(item.get("pdf_path") or ""),
+                    "image_dir": str(item.get("image_dir") or ""),
                     "album_id": str(item.get("album_id") or item.get("id") or ""),
                     "cover_url": str(item.get("cover_url") or ""),
                     "format": str(item.get("format") or ""),
                     "created_at": str(item.get("created_at") or ""),
+                    "outputs": [
+                        str(path)
+                        for path in (item.get("outputs") or [])
+                        if str(path).strip()
+                    ],
                 }
                 for item in (data.get("history") or [])
                 if isinstance(item, dict)
@@ -2458,6 +2465,11 @@ class MainWindow(QMainWindow):
         header = QHBoxLayout()
         title = QLabel("历史下载记录")
         title.setObjectName("panelTitle")
+        mode_label = QLabel("阅读格式")
+        mode_label.setStyleSheet("color:#64748b;font-size:12px;font-weight:700;")
+        self.history_read_mode_combo = QComboBox()
+        self.history_read_mode_combo.addItems(["自动", "PDF", "原文件"])
+        self.history_read_mode_combo.setFixedWidth(96)
         read_btn = QPushButton("阅读选中")
         read_btn.setObjectName("primaryButton")
         read_btn.clicked.connect(self.open_selected_history_reading)
@@ -2467,6 +2479,8 @@ class MainWindow(QMainWindow):
         clear_btn.clicked.connect(self.clear_download_history)
         header.addWidget(title)
         header.addStretch()
+        header.addWidget(mode_label)
+        header.addWidget(self.history_read_mode_combo)
         header.addWidget(open_dir_btn)
         header.addWidget(read_btn)
         header.addWidget(clear_btn)
@@ -2540,6 +2554,9 @@ class MainWindow(QMainWindow):
         fmt = record.get("format") or Path(file_text).suffix.lstrip(".").upper()
         if fmt:
             meta_items.append(fmt.upper())
+        outputs = record.get("outputs") or []
+        if isinstance(outputs, list) and len(outputs) > 1:
+            meta_items.append(f"{len(outputs)} 个文件")
         album_id = record.get("album_id") or record.get("id") or ""
         if album_id:
             meta_items.append(f"ID {album_id}")
@@ -2548,7 +2565,7 @@ class MainWindow(QMainWindow):
         meta_label.setToolTip("  ·  ".join(meta_items))
         info.addWidget(meta_label)
 
-        path_text = record.get("path", "")
+        path_text = record.get("path", "") or record.get("pdf_path", "") or record.get("image_dir", "")
         path_label = QLabel(QFontMetrics(self.font()).elidedText(path_text, Qt.ElideMiddle, 620))
         path_label.setObjectName("historyPath")
         path_label.setToolTip(path_text)
@@ -2637,7 +2654,7 @@ class MainWindow(QMainWindow):
         label.setText("本地")
 
     def find_history_local_cover(self, record: Dict[str, str]) -> Optional[Path]:
-        path_text = record.get("path", "")
+        path_text = record.get("image_dir", "") or record.get("path", "")
         if not path_text:
             return None
         path = Path(path_text).expanduser()
@@ -2681,12 +2698,15 @@ class MainWindow(QMainWindow):
         if not record:
             QMessageBox.information(self, "提示", "请先选择一条历史记录。")
             return
-        path = Path(record.get("path", "")).expanduser()
-        if not path.exists():
-            QMessageBox.warning(self, "文件不存在", f"找不到本地文件：{path}")
+        mode = self.selected_history_read_mode()
+        path_text = record.get("path", "") or record.get("pdf_path", "") or record.get("image_dir", "")
+        path = Path(path_text).expanduser() if path_text else Path()
+        images, pdf_path = self.resolve_history_reader_sources_for_record(record, mode)
+        if not images and pdf_path is None:
+            target = str(path) if path_text else "历史记录中的本地文件"
+            QMessageBox.warning(self, "文件不存在", f"找不到可阅读的本地文件：{target}")
             return
 
-        images, pdf_path = self.resolve_history_reader_sources(path)
         if images or pdf_path is not None:
             title = record.get("title") or path.stem
             dialog = HdMangaReaderWindow(f"漫画阅读 - {title}")
@@ -2707,7 +2727,41 @@ class MainWindow(QMainWindow):
                 self.log(f"本地阅读器打开失败：{exc}")
                 QMessageBox.warning(self, "阅读失败", f"本地阅读器解析失败，已改用系统打开。\n{exc}")
 
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        if path_text and path.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def selected_history_read_mode(self) -> str:
+        combo = getattr(self, "history_read_mode_combo", None)
+        text = combo.currentText() if combo else "自动"
+        if text == "PDF":
+            return "pdf"
+        if text == "原文件":
+            return "original"
+        return "auto"
+
+    def resolve_history_reader_sources_for_record(self, record: Dict[str, str], mode: str = "auto") -> tuple[List[Path], Optional[Path]]:
+        pdf_path = self.resolve_history_pdf_path(record)
+        image_dir = self.resolve_history_image_dir_from_record(record)
+        images = self.collect_local_reader_images(image_dir) if image_dir else []
+        path_text = record.get("path") or ""
+        if path_text:
+            direct_images, direct_pdf = collect_reader_files(Path(path_text).expanduser())
+            if not images and direct_images:
+                images = direct_images
+            if pdf_path is None and direct_pdf is not None:
+                pdf_path = direct_pdf
+
+        if mode == "pdf":
+            if pdf_path is not None:
+                return [], pdf_path
+            return images, None
+        if mode == "original":
+            if images:
+                return images, None
+            return [], pdf_path
+        if images:
+            return images, None
+        return [], pdf_path
 
     def resolve_history_reader_sources(self, path: Path) -> tuple[List[Path], Optional[Path]]:
         images, pdf_path = collect_reader_files(path)
@@ -2720,12 +2774,52 @@ class MainWindow(QMainWindow):
                 pdf_path = dir_pdf
         return images, pdf_path
 
+    def resolve_history_pdf_path(self, record: Dict[str, str]) -> Optional[Path]:
+        candidates: List[Path] = []
+        for key in ("pdf_path", "path"):
+            value = record.get(key) or ""
+            if value:
+                candidates.append(Path(value).expanduser())
+        outputs = record.get("outputs") or []
+        if isinstance(outputs, list):
+            candidates.extend(Path(str(value)).expanduser() for value in outputs if str(value).strip())
+        for candidate in candidates:
+            if candidate.is_file() and candidate.suffix.lower() == ".pdf":
+                return candidate
+            if candidate.is_dir():
+                _, pdf_path = collect_reader_files(candidate)
+                if pdf_path is not None:
+                    return pdf_path
+        return None
+
+    def resolve_history_image_dir_from_record(self, record: Dict[str, str]) -> Optional[Path]:
+        image_dir = record.get("image_dir") or ""
+        if image_dir:
+            candidate = Path(image_dir).expanduser()
+            if candidate.exists() and self.collect_local_reader_images(candidate):
+                return candidate
+        for key in ("path", "pdf_path"):
+            value = record.get(key) or ""
+            if value:
+                candidate = self.resolve_history_image_dir(Path(value).expanduser())
+                if candidate:
+                    return candidate
+        outputs = record.get("outputs") or []
+        if isinstance(outputs, list):
+            for value in outputs:
+                if str(value).strip():
+                    candidate = self.resolve_history_image_dir(Path(str(value)).expanduser())
+                    if candidate:
+                        return candidate
+        return None
+
     def open_selected_history_location(self):
         record = self.selected_history_record()
         if not record:
             QMessageBox.information(self, "提示", "请先选择一条历史记录。")
             return
-        path = Path(record.get("path", "")).expanduser()
+        path_text = record.get("path", "") or record.get("pdf_path", "") or record.get("image_dir", "")
+        path = Path(path_text).expanduser()
         target = path if path.is_dir() else path.parent
         if not target.exists():
             QMessageBox.warning(self, "路径不存在", f"找不到本地路径：{target}")
@@ -4639,6 +4733,15 @@ class MainWindow(QMainWindow):
         self.download_pending_queue.clear()
         self.refresh_queue_table()
 
+    def remove_finished_album_from_queue(self, album_id: str):
+        before_queue = len(self.queue)
+        before_pending = len(self.download_pending_queue)
+        self.queue = [album for album in self.queue if album.album_id != album_id]
+        self.download_pending_queue = [album for album in self.download_pending_queue if album.album_id != album_id]
+        if len(self.queue) != before_queue or len(self.download_pending_queue) != before_pending:
+            self.log(f"已从下载列表移除完成任务：{album_id}")
+            self.refresh_queue_table()
+
     def start_download_queue(self):
         if not self.queue and not self.download_pending_queue:
             QMessageBox.information(self, "提示", "下载队列为空。")
@@ -4690,7 +4793,6 @@ class MainWindow(QMainWindow):
         if card:
             status = card.findChild(QLabel, "downloadStatus")
             progress = card.findChild(QProgressBar, "downloadProgress")
-            transfer = card.findChild(QLabel, "downloadTransfer")
             transfer = card.findChild(QLabel, "downloadTransfer")
             if status:
                 status.setText("排队启动")
@@ -4790,6 +4892,8 @@ class MainWindow(QMainWindow):
             self.log(f"单本下载已取消：{album_id}")
             return
         self.log(f"单本下载完成：{album_id}")
+        self.remove_finished_album_from_queue(album_id)
+        self.update_download_summary()
 
     def on_single_download_failed(self, album_id: str, message: str):
         if album_id in self.download_cancelled_ids:
@@ -4835,6 +4939,11 @@ class MainWindow(QMainWindow):
 
     def forget_download_worker(self, album_id: str):
         self.download_workers.pop(album_id, None)
+        if album_id not in {album.album_id for album in self.queue}:
+            self.download_totals.pop(album_id, None)
+            self.download_done_counts.pop(album_id, None)
+            self.download_bytes.pop(album_id, None)
+            self.download_speeds.pop(album_id, None)
         self.pump_download_workers()
         if not self.is_download_busy() and not self.download_pending_queue:
             self.on_all_downloads_finished()
@@ -4901,25 +5010,92 @@ class MainWindow(QMainWindow):
             return
         row = self.completed_table.rowCount()
         self.completed_table.insertRow(row)
-        path = Path(pdf_path)
+        path = Path(pdf_path).expanduser()
         for col, value in enumerate([album.title, path.name, str(path)]):
             item = QTableWidgetItem(value)
             item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             self.completed_table.setItem(row, col, item)
-        self.completed.append(pdf_path)
+        normalized_path = self.normalized_history_path(path)
+        completed_paths = {self.normalized_history_path(Path(value).expanduser()) for value in self.completed}
+        if normalized_path not in completed_paths:
+            self.completed.append(str(path))
+
+        image_dir = self.resolve_completed_image_dir(album, path)
+        pdf_record_path = str(path) if path.suffix.lower() == ".pdf" else ""
+        existing_index = self.find_history_index_for_album(album.album_id)
+        outputs: List[str] = []
+        if existing_index >= 0:
+            old_record = self.download_history.pop(existing_index)
+            old_outputs = old_record.get("outputs") or []
+            if isinstance(old_outputs, list):
+                outputs.extend(str(value) for value in old_outputs if str(value).strip())
+            old_path = old_record.get("path") or ""
+            if old_path:
+                outputs.append(str(old_path))
+            if not pdf_record_path:
+                pdf_record_path = old_record.get("pdf_path") or ""
+            if image_dir is None:
+                old_image_dir = old_record.get("image_dir") or ""
+                image_dir = Path(old_image_dir).expanduser() if old_image_dir else None
+        outputs.append(str(path))
+        deduped_outputs = []
+        seen_outputs = set()
+        for value in outputs:
+            key = self.normalized_history_path(Path(value).expanduser())
+            if key in seen_outputs:
+                continue
+            seen_outputs.add(key)
+            deduped_outputs.append(value)
         record = {
             "title": album.title,
             "file": path.name,
             "path": str(path),
+            "pdf_path": pdf_record_path,
+            "image_dir": str(image_dir) if image_dir else "",
             "album_id": album.album_id,
             "cover_url": album.cover_url,
             "format": path.suffix.lstrip(".") or self.selected_output_format(),
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "outputs": deduped_outputs,
         }
         self.download_history.append(record)
         self.selected_history_index = len(self.download_history) - 1
         self.refresh_history_table()
         self.save_local_cache()
+
+    @staticmethod
+    def normalized_history_path(path: Path) -> str:
+        try:
+            return str(path.expanduser().resolve(strict=False)).lower()
+        except Exception:
+            return str(path).lower()
+
+    def find_history_index_for_album(self, album_id: str) -> int:
+        if not album_id:
+            return -1
+        for index, record in enumerate(self.download_history):
+            if str(record.get("album_id") or record.get("id") or "") == str(album_id):
+                return index
+        return -1
+
+    def resolve_completed_image_dir(self, album: AlbumMeta, output_path: Path) -> Optional[Path]:
+        if output_path.is_dir() and self.collect_local_reader_images(output_path):
+            return output_path
+        candidates: List[Path] = []
+        if output_path.suffix.lower() in {".pdf", ".zip"}:
+            candidates.append(output_path.with_suffix(""))
+        parent = output_path.parent
+        if parent.exists():
+            expected_prefix = f"JM{album.album_id}-"
+            candidates.extend(
+                child
+                for child in sorted(parent.iterdir())
+                if child.is_dir() and (child.name.startswith(expected_prefix) or album.album_id in child.name)
+            )
+        for candidate in candidates:
+            if candidate.exists() and self.collect_local_reader_images(candidate):
+                return candidate
+        return None
 
     def set_progress(self, done: int, total: int):
         self.progress.setMaximum(max(total, 1))

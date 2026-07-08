@@ -282,6 +282,7 @@ class HdMangaReaderWindow(QWidget):
         self.page_items = {}
         self.placeholders: Dict[int, QGraphicsRectItem] = {}
         self.page_sizes: Dict[int, Tuple[int, int]] = {}
+        self.last_scene_width = 0
         self.image_paths: Dict[int, Path] = {}
         self.pdf_path: Optional[Path] = None
         self.decode_pending = set()
@@ -500,8 +501,13 @@ class HdMangaReaderWindow(QWidget):
             self.preload_worker.cancel()
 
     def set_total_pages(self, total: int) -> None:
+        old_total = self.page_count
         self.page_count = max(0, total)
         self.loaded_count = min(self.loaded_count, self.page_count)
+        for index in range(old_total + 1, self.page_count + 1):
+            if index not in self.page_items:
+                self.create_placeholder(index, size=self.estimated_page_size())
+        self.layout_pages()
         self.update_page_label()
 
     def add_pixmap(self, index: int, pixmap: QPixmap) -> None:
@@ -529,6 +535,7 @@ class HdMangaReaderWindow(QWidget):
         self.status_label.setText(f"已加载 {len(self.items)} / {self.page_count or len(self.items)}")
 
     def layout_pages(self) -> None:
+        old_vertical = self.view.verticalScrollBar().value()
         y = 0
         max_width = 0
         gap = PAGE_STITCH_GAP
@@ -537,11 +544,19 @@ class HdMangaReaderWindow(QWidget):
             if item is None:
                 continue
             width, height = self.page_sizes.get(index, (800, 1100))
-            item.setPos(0, y)
-            y += height + gap
             max_width = max(max_width, width)
-        self.scene.setSceneRect(0, 0, max_width, max(0, y - gap))
-        self.view.centerOn(self.scene.sceneRect().center().x(), self.view.mapToScene(self.view.viewport().rect().center()).y())
+        scene_width = max(max_width, self.last_scene_width, int(self.view.viewport().width() / max(self.view.zoom, 0.1)))
+        self.last_scene_width = scene_width
+        y = 0
+        for index in range(1, self.page_count + 1):
+            item = self.page_items.get(index)
+            if item is None:
+                continue
+            width, height = self.page_sizes.get(index, (800, 1100))
+            item.setPos(max(0, (scene_width - width) / 2), y)
+            y += height + gap
+        self.scene.setSceneRect(0, 0, scene_width, max(0, y - gap))
+        self.view.verticalScrollBar().setValue(old_vertical)
 
     def fit_width(self) -> None:
         self.auto_fit_width = True
@@ -640,6 +655,12 @@ class HdMangaReaderWindow(QWidget):
             return 800, 1100
 
     def create_placeholder(self, index: int, path: Optional[Path] = None, size: Optional[Tuple[int, int]] = None):
+        old_placeholder = self.placeholders.pop(index, None)
+        if old_placeholder is not None:
+            try:
+                self.scene.removeItem(old_placeholder)
+            except RuntimeError:
+                pass
         width, height = size or ((self.image_size(path) if path is not None else (800, 1100)))
         self.page_sizes[index] = (width, height)
         placeholder = QGraphicsRectItem(0, 0, width, height)
@@ -648,6 +669,13 @@ class HdMangaReaderWindow(QWidget):
         self.scene.addItem(placeholder)
         self.placeholders[index] = placeholder
         self.page_items[index] = placeholder
+
+    def estimated_page_size(self) -> Tuple[int, int]:
+        if self.page_sizes:
+            widths = [size[0] for size in self.page_sizes.values()]
+            heights = [size[1] for size in self.page_sizes.values()]
+            return max(widths), max(heights)
+        return 1600, 2200
 
     def schedule_decode_window(self, center: int, radius: int = 2):
         if not self.image_paths and self.pdf_path is None:
@@ -853,6 +881,7 @@ class HdMangaReaderWindow(QWidget):
         self.page_count = 0
         self.loaded_count = 0
         self.current_page = 0
+        self.last_scene_width = 0
         self._default_zoom_applied = False
         self.scene.clear()
         self.view.reset_zoom()
@@ -891,6 +920,8 @@ class HdMangaReaderWindow(QWidget):
             return
         if self._closed or index in self.items or index in self.decode_pending:
             return
+        if index > self.page_count:
+            self.set_total_pages(index)
         path = Path(image_path)
         key = str(path.resolve())
         cached = self.cache.get(key)

@@ -208,6 +208,37 @@ class DownloadJob:
             self.logs.append(time.strftime("[%H:%M:%S] ") + message)
             self.logs = self.logs[-300:]
 
+    def set_status(self, status: str):
+        with self.lock:
+            self.status = status
+
+    def set_current_album(self, album: AlbumMeta):
+        with self.lock:
+            self.current_album_id = album.album_id
+            self.current_title = album.title
+
+    def increment_done(self, amount: int = 1):
+        with self.lock:
+            self.done = min(self.total, self.done + amount)
+
+    def adjust_total(self, estimated_total: int, actual_total: int):
+        estimated_total = max(1, estimated_total)
+        actual_total = max(1, actual_total)
+        if estimated_total == actual_total:
+            return
+        with self.lock:
+            self.total = max(1, self.total + actual_total - estimated_total)
+            self.done = min(self.done, self.total)
+
+    def add_output(self, output: Path):
+        with self.lock:
+            self.outputs.append(str(output))
+
+    def fail(self, exc: Exception):
+        with self.lock:
+            self.error = str(exc)
+            self.status = "failed"
+
     def snapshot(self) -> DownloadJobStatus:
         with self.lock:
             return DownloadJobStatus(
@@ -224,22 +255,20 @@ class DownloadJob:
 
     def run(self):
         try:
-            self.status = "running"
+            self.set_status("running")
             self.config.output_dir.mkdir(parents=True, exist_ok=True)
             for album in self.albums:
                 if self.cancel_event.is_set():
-                    self.status = "cancelled"
+                    self.set_status("cancelled")
                     return
-                self.current_album_id = album.album_id
-                self.current_title = album.title
+                self.set_current_album(album)
                 self.log(f"开始下载 {album.title}")
                 for output in self._download_album(album):
-                    self.outputs.append(str(output))
+                    self.add_output(output)
                 self.log(f"完成 {album.title}")
-            self.status = "cancelled" if self.cancel_event.is_set() else "finished"
+            self.set_status("cancelled" if self.cancel_event.is_set() else "finished")
         except Exception as exc:
-            self.error = str(exc)
-            self.status = "failed"
+            self.fail(exc)
             self.log(f"下载失败：{exc}")
 
     def _chapter_count(self, album: AlbumMeta) -> int:
@@ -248,6 +277,7 @@ class DownloadJob:
         return max(1, len(album.chapters))
 
     def _download_album(self, album: AlbumMeta) -> List[Path]:
+        estimated_chapter_total = self._chapter_count(album)
         client = JmApiClient(self.config, self.log, self.cancel_event)
         detail = client.photo_as_album(album.album_id[1:]) if album.album_id.lower().startswith("p") else client.get_album_detail(album.album_id)
         chapters = album.chapters or detail.chapters
@@ -259,6 +289,7 @@ class DownloadJob:
             chapters = [chapter for chapter in chapters if chapter.chapter_id in wanted]
         if not chapters:
             chapters = [ChapterMeta(parse_jm_id(album.album_id), "全集", album.url, 1)]
+        self.adjust_total(estimated_chapter_total, len(chapters))
 
         album_dir = self.config.output_dir / f"JM{album.album_id}-{safe_name(album.title, album.album_id)}"
         album_dir.mkdir(parents=True, exist_ok=True)
@@ -266,7 +297,7 @@ class DownloadJob:
             if self.cancel_event.is_set():
                 return []
             self._download_chapter(client, album, chapter, album_dir, cache_db)
-            self.done += 1
+            self.increment_done()
             client.sleep()
 
         if self.config.output_format == "images":
