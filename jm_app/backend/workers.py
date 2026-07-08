@@ -269,10 +269,13 @@ class DownloadWorker(QThread):
         self.config = config
         self.cancel_event = threading.Event()
         self._transfer_lock = threading.Lock()
+        self._progress_lock = threading.Lock()
         self._album_bytes: Dict[str, int] = {}
         self._album_last_bytes: Dict[str, int] = {}
         self._album_last_time: Dict[str, float] = {}
         self._album_speeds: Dict[str, float] = {}
+        self._album_image_done: Dict[str, int] = {}
+        self._album_image_total: Dict[str, int] = {}
         self._global_chapters_done = 0
         self._global_chapters_total = 1
 
@@ -333,13 +336,11 @@ class DownloadWorker(QThread):
         output_paths: List[Path] = []
         chapter_done = 0
         chapter_total = max(1, len(chapters))
-        self.album_progress.emit(album, chapter_done, chapter_total)
         for chapter in chapters:
             if self.cancel_event.is_set():
                 return output_paths
             self._download_chapter(client, album, chapter, album_dir, cache_db)
             chapter_done += 1
-            self.album_progress.emit(album, chapter_done, chapter_total)
             self._emit_global_chapter_done(album, chapter_done, chapter_total)
             client.sleep()
 
@@ -381,10 +382,13 @@ class DownloadWorker(QThread):
         chapter_name = f"{chapter.index:03d}-{safe_name(chapter.title, chapter.chapter_id)}"
         chapter_dir = album_dir / chapter_name
         cached_path = cache_db.cached_chapter_path(chapter.chapter_id)
-        if cached_path and collect_images(cached_path):
+        cached_images = collect_images(cached_path) if cached_path else []
+        if cached_images:
+            self._add_album_image_total(album, len(cached_images))
             if cached_path.resolve() != chapter_dir.resolve():
                 self._mirror_cached_chapter(cached_path, chapter_dir)
                 self._record_album_transfer(album, self._dir_size(chapter_dir))
+            self._mark_album_images_done(album, len(cached_images))
             self.log.emit(f"跳过已缓存章节：{chapter.title}")
             return
 
@@ -394,9 +398,11 @@ class DownloadWorker(QThread):
             return
 
         chapter_dir.mkdir(parents=True, exist_ok=True)
+        self._add_album_image_total(album, len(photo.images))
 
         self.log.emit(f"下载章节 {chapter.title}：{len(photo.images)} 张图片")
-        with ThreadPoolExecutor(max_workers=max(1, self.config.image_threads)) as executor:
+        max_workers = max(1, min(12, self.config.image_threads))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(self._download_image_slot, client, album, photo, image_index, image_name, chapter_dir)
                 for image_index, image_name in enumerate(photo.images, start=1)
@@ -405,6 +411,7 @@ class DownloadWorker(QThread):
                 if self.cancel_event.is_set():
                     return
                 future.result()
+                self._mark_album_images_done(album, 1)
         cache_db.mark_chapter_downloaded(album.album_id, chapter, chapter_dir, len(collect_images(chapter_dir)))
 
     def _mirror_cached_chapter(self, cached_path: Path, chapter_dir: Path):
@@ -430,12 +437,15 @@ class DownloadWorker(QThread):
         last_error = None
         for url in client.build_image_urls(photo, image_name):
             try:
-                time.sleep(random.uniform(0.2, 0.5))
-                saved_bytes = client.download_image(url, filename, photo.scramble_id)
-                if not saved_bytes and filename.exists():
-                    saved_bytes = filename.stat().st_size
-                if saved_bytes:
-                    self._record_album_transfer(album, int(saved_bytes))
+                self.cancel_event.wait(random.uniform(0.05, 0.18))
+                if self.cancel_event.is_set():
+                    return
+                client.download_image(
+                    url,
+                    filename,
+                    photo.scramble_id,
+                    progress_callback=lambda size, album=album: self._record_album_transfer(album, int(size)),
+                )
                 return
             except Exception as exc:
                 last_error = exc
@@ -451,7 +461,32 @@ class DownloadWorker(QThread):
             self._album_last_bytes[album.album_id] = existing_bytes
             self._album_last_time[album.album_id] = now
             self._album_speeds[album.album_id] = 0.0
+        with self._progress_lock:
+            self._album_image_done[album.album_id] = 0
+            self._album_image_total[album.album_id] = 0
         self.album_transfer.emit(album, existing_bytes, 0.0)
+        self.album_progress.emit(album, 0, 1)
+
+    def _add_album_image_total(self, album: AlbumMeta, count: int):
+        count = max(0, int(count))
+        if count <= 0:
+            return
+        with self._progress_lock:
+            done = self._album_image_done.get(album.album_id, 0)
+            current_total = self._album_image_total.get(album.album_id, 0)
+            total = max(done + count, current_total + count, 1)
+            self._album_image_total[album.album_id] = total
+        self.album_progress.emit(album, done, total)
+
+    def _mark_album_images_done(self, album: AlbumMeta, count: int = 1):
+        count = max(0, int(count))
+        if count <= 0:
+            return
+        with self._progress_lock:
+            total = max(1, self._album_image_total.get(album.album_id, 1))
+            done = min(total, self._album_image_done.get(album.album_id, 0) + count)
+            self._album_image_done[album.album_id] = done
+        self.album_progress.emit(album, done, total)
 
     def _record_album_transfer(self, album: AlbumMeta, delta_bytes: int):
         if delta_bytes <= 0:

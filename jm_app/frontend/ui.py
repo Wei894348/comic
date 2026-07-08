@@ -71,6 +71,7 @@ from ..backend.jmcomic_defaults import jmcomic_default_cookie_header
 from ..backend.models import AlbumMeta, ChapterMeta, DownloadConfig, NetworkConfig
 from .hd_reader import HdMangaReaderWindow, collect_reader_files
 from ..backend.pdf_utils import IMAGE_SUFFIXES, collect_images
+from ..backend.runtime_paths import app_data_dir, downloads_dir, reader_cache_dir, ui_cache_path
 from ..backend.utils import parse_cookie_header, split_ids
 from ..backend.workers import ChapterWorker, DownloadWorker, IncrementalUpdateWorker, ReaderWorker, ScrapeWorker
 
@@ -809,7 +810,9 @@ class MainWindow(QMainWindow):
         self.append_start_index = 0
         self.current_result_cache_key = ""
         self.force_network_once = False
-        self.cache_file = Path.home() / ".comic18_qt_cache.json"
+        self.data_root = app_data_dir()
+        self.default_output_dir = downloads_dir()
+        self.cache_file = ui_cache_path()
         self.comic_db = ComicCacheDB()
         self.result_cache: Dict[str, List[AlbumMeta]] = {}
         self.detail_cache: Dict[str, AlbumMeta] = {}
@@ -1320,8 +1323,10 @@ class MainWindow(QMainWindow):
                 self.login_ua_edit.setText(self.ua_edit.text())
             self.proxy_edit.setText(str(self.settings_cache.get("proxy") or ""))
             output_dir = str(self.settings_cache.get("output_dir") or "")
-            if output_dir:
+            if output_dir and self.should_keep_saved_output_dir(output_dir):
                 self.output_edit.setText(output_dir)
+            else:
+                self.output_edit.setText(str(self.default_output_dir))
 
             self.delay_min.setValue(int(self.settings_cache.get("delay_min", 4)))
             self.delay_max.setValue(int(self.settings_cache.get("delay_max", 9)))
@@ -1930,7 +1935,7 @@ class MainWindow(QMainWindow):
         self.ua_edit = QLineEdit(DEFAULT_USER_AGENT)
         self.proxy_edit = QLineEdit()
         self.proxy_edit.setPlaceholderText("可选：http://127.0.0.1:7890；多个代理用英文逗号/分号分隔")
-        self.output_edit = QLineEdit(str(Path.cwd() / "downloads"))
+        self.output_edit = QLineEdit(str(self.default_output_dir))
         self.delay_min = QSpinBox()
         self.delay_min.setRange(1, 120)
         self.delay_min.setValue(4)
@@ -1944,7 +1949,7 @@ class MainWindow(QMainWindow):
         self.backoff.setRange(1, 120)
         self.backoff.setValue(3)
         self.image_threads = QSpinBox()
-        self.image_threads.setRange(1, 8)
+        self.image_threads.setRange(1, 12)
         self.image_threads.setValue(4)
         self.detail_threads = QSpinBox()
         self.detail_threads.setRange(1, 12)
@@ -2165,7 +2170,7 @@ class MainWindow(QMainWindow):
         self.ua_edit = QLineEdit(DEFAULT_USER_AGENT)
         self.proxy_edit = QLineEdit()
         self.proxy_edit.setPlaceholderText("可选：http://127.0.0.1:7890")
-        self.output_edit = QLineEdit(str(Path.cwd() / "downloads"))
+        self.output_edit = QLineEdit(str(self.default_output_dir))
         self.output_edit.setFixedHeight(28)
         self.delay_min = QSpinBox()
         self.delay_min.setRange(1, 120)
@@ -2180,7 +2185,7 @@ class MainWindow(QMainWindow):
         self.backoff.setRange(1, 120)
         self.backoff.setValue(3)
         self.image_threads = QSpinBox()
-        self.image_threads.setRange(1, 8)
+        self.image_threads.setRange(1, 12)
         self.image_threads.setValue(4)
         self.detail_threads = QSpinBox()
         self.detail_threads.setRange(1, 12)
@@ -2589,7 +2594,7 @@ class MainWindow(QMainWindow):
         outer.addLayout(info, 1)
 
         if index >= 0:
-            card.mousePressEvent = lambda event, idx=index: self.select_history_record(idx)
+            card.mousePressEvent = lambda event, idx=index: self.handle_history_card_mouse_press(event, idx)
             card.mouseDoubleClickEvent = lambda event, idx=index: self.select_history_record(idx, open_reader=True)
         return card
 
@@ -2680,6 +2685,46 @@ class MainWindow(QMainWindow):
         elif open_location:
             self.open_selected_history_location()
 
+    def handle_history_card_mouse_press(self, event, index: int):
+        if index < 0 or index >= len(self.download_history):
+            return
+        if event.button() == Qt.RightButton:
+            self.select_history_record(index)
+            self.show_history_context_menu(index, event.globalPos())
+            return
+        if event.button() == Qt.LeftButton:
+            self.select_history_record(index)
+
+    def show_history_context_menu(self, index: int, global_pos):
+        if index < 0 or index >= len(self.download_history):
+            return
+        menu = QMenu(self)
+        read_action = menu.addAction("阅读")
+        locate_action = menu.addAction("打开位置")
+        menu.addSeparator()
+        delete_action = menu.addAction("删除记录")
+        delete_action.setObjectName("dangerAction")
+        action = menu.exec_(global_pos)
+        if action == read_action:
+            self.select_history_record(index, open_reader=True)
+        elif action == locate_action:
+            self.select_history_record(index, open_location=True)
+        elif action == delete_action:
+            self.delete_history_record(index)
+
+    def delete_history_record(self, index: int):
+        if index < 0 or index >= len(self.download_history):
+            return
+        record = self.download_history.pop(index)
+        title = record.get("title") or record.get("file") or record.get("path") or "历史记录"
+        if self.selected_history_index == index:
+            self.selected_history_index = -1
+        elif self.selected_history_index > index:
+            self.selected_history_index -= 1
+        self.log(f"已删除历史记录：{title}")
+        self.refresh_history_table()
+        self.save_local_cache()
+
     def clear_download_history(self):
         self.download_history.clear()
         self.refresh_history_table()
@@ -2716,7 +2761,9 @@ class MainWindow(QMainWindow):
                 if images:
                     dialog.start_decode_image_paths(images)
                 elif pdf_path is not None:
-                    dialog.start_decode_pdf(pdf_path)
+                    fallback_images = self.resolve_history_reader_sources_for_record(record, "original")[0]
+                    if not dialog.start_decode_pdf(pdf_path, fallback_images):
+                        raise RuntimeError(f"PDF 解码失败：{pdf_path}")
                 dialog.showMaximized()
                 dialog.raise_()
                 dialog.activateWindow()
@@ -3035,7 +3082,24 @@ class MainWindow(QMainWindow):
         self.log("已从浏览器验证窗口同步 Cookie。")
 
     def reader_cache_root(self) -> Path:
-        return Path(self.output_edit.text()).expanduser() / ".reader_cache"
+        return reader_cache_dir()
+
+    def should_keep_saved_output_dir(self, output_dir: str) -> bool:
+        if not output_dir:
+            return False
+        try:
+            saved = Path(output_dir).expanduser().resolve(strict=False)
+            project_downloads = Path(__file__).resolve().parents[2] / "downloads"
+            old_default = project_downloads.resolve(strict=False)
+            cwd_default = (Path.cwd() / "downloads").resolve(strict=False)
+            new_default = self.default_output_dir.resolve(strict=False)
+        except Exception:
+            return True
+        if saved in {old_default, cwd_default}:
+            return False
+        if saved == new_default:
+            return True
+        return True
 
     def update_cache_path_label(self):
         if not hasattr(self, "cache_path_label"):
@@ -3136,7 +3200,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "缓存清理完成", f"删除损坏文件 {removed_files} 个，空目录 {removed_dirs} 个。")
 
     def export_cache_bundle(self):
-        directory = QFileDialog.getExistingDirectory(self, "选择缓存导出目录", str(Path.home()))
+        directory = QFileDialog.getExistingDirectory(self, "选择缓存导出目录", str(self.data_root))
         if not directory:
             return
         target = Path(directory).expanduser() / "comic18_cache"
@@ -3150,7 +3214,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "导出完成", f"缓存已导出到：{target}")
 
     def import_cache_bundle(self):
-        directory = QFileDialog.getExistingDirectory(self, "选择 comic18_cache 缓存目录", str(Path.home()))
+        directory = QFileDialog.getExistingDirectory(self, "选择 comic18_cache 缓存目录", str(self.data_root))
         if not directory:
             return
         source = Path(directory).expanduser()
@@ -3403,10 +3467,10 @@ class MainWindow(QMainWindow):
 
     def background_download_config(self) -> DownloadConfig:
         config = copy.deepcopy(self.download_config())
-        config.image_threads = max(1, min(2, config.image_threads))
+        config.image_threads = max(1, min(12, config.image_threads))
         config.detail_threads = max(1, min(2, config.detail_threads))
-        config.delay_min = max(1.0, min(config.delay_min, 2.0))
-        config.delay_max = max(config.delay_min, min(config.delay_max, 4.0))
+        config.delay_min = max(0.2, min(config.delay_min, 1.0))
+        config.delay_max = max(config.delay_min, min(config.delay_max, 2.0))
         return config
 
     def start_scrape(self, source_page: int = 1, append: bool = False):
@@ -4639,10 +4703,11 @@ class MainWindow(QMainWindow):
         sub.setObjectName("downloadSub")
         sub.setToolTip(sub_text)
         layout.addWidget(sub)
-        transfer_text = "大小：0 B    速度：0 B/s" if album else ""
+        transfer_text = "已下：0 B    速度：0 B/s" if album else ""
         transfer = QLabel(transfer_text)
         transfer.setObjectName("downloadTransfer")
         transfer.setVisible(bool(album))
+        transfer.setMinimumWidth(230)
         layout.addWidget(transfer)
         progress_row = QHBoxLayout()
         progress_row.setSpacing(8)
@@ -4784,7 +4849,7 @@ class MainWindow(QMainWindow):
         worker.album_progress.connect(self.on_download_album_progress)
         worker.album_transfer.connect(self.on_download_album_transfer)
         worker.album_done.connect(self.on_download_album_done)
-        worker.item_done.connect(self.add_completed_item)
+        worker.item_done.connect(lambda done_album, path: None if done_album.album_id in self.download_cancelled_ids else self.add_completed_item(done_album, path))
         worker.finished_ok.connect(lambda album_id=album.album_id: self.on_single_download_finished(album_id))
         worker.failed.connect(lambda message, album_id=album.album_id: self.on_single_download_failed(album_id, message))
         worker.finished.connect(lambda album_id=album.album_id: self.forget_download_worker(album_id))
@@ -4801,8 +4866,10 @@ class MainWindow(QMainWindow):
         worker.start()
 
     def on_download_album_started(self, album: AlbumMeta, total: int):
+        if album.album_id in self.download_cancelled_ids:
+            return
         self.current_download_album_id = album.album_id
-        self.log(f"当前下载任务：{album.title}，共 {max(1, total)} 章。")
+        self.log(f"当前下载任务：{album.title}，正在解析图片列表。")
         self.download_totals[album.album_id] = max(1, total)
         self.download_done_counts.setdefault(album.album_id, 0)
         card = self.download_card_by_id.get(album.album_id)
@@ -4815,17 +4882,17 @@ class MainWindow(QMainWindow):
             if progress:
                 self.set_download_card_progress(progress, 0, max(1, total), "0%")
             if sub:
-                sub.setText(f"ID：{album.album_id}    章节：0 / {max(1, total)}")
+                sub.setText(f"ID：{album.album_id}    图片：0 / {max(1, total)}")
 
     def on_download_album_progress(self, album: AlbumMeta, done: int, total: int):
+        if album.album_id in self.download_cancelled_ids:
+            return
         self.current_download_album_id = album.album_id
-        self.log(f"下载进度：{album.title} {done}/{max(1, total)} 章。")
+        if done == 0 or done == total or done % 10 == 0:
+            self.log(f"下载进度：{album.title} {done}/{max(1, total)} 张图片。")
         self.download_totals[album.album_id] = max(1, total)
         self.download_done_counts[album.album_id] = done
-        if album.album_id in self.download_progress_pending:
-            return
-        self.download_progress_pending.add(album.album_id)
-        QTimer.singleShot(120, lambda album=copy.deepcopy(album), done=done, total=total: self.flush_download_card_progress(album, done, total))
+        self.flush_download_card_progress(copy.deepcopy(album), done, total)
 
     def flush_download_card_progress(self, album: AlbumMeta, done: int, total: int):
         self.download_progress_pending.discard(album.album_id)
@@ -4840,10 +4907,12 @@ class MainWindow(QMainWindow):
                 percent = self.download_percent(done, total)
                 self.set_download_card_progress(progress, done, total, f"{percent}%")
             if sub:
-                sub.setText(f"ID：{album.album_id}    章节：{done} / {max(1, total)}")
+                sub.setText(f"ID：{album.album_id}    图片：{done} / {max(1, total)}")
         self.update_download_summary()
 
     def on_download_album_transfer(self, album: AlbumMeta, bytes_done: int, speed: float):
+        if album.album_id in self.download_cancelled_ids:
+            return
         self.download_bytes[album.album_id] = max(0, int(bytes_done))
         self.download_speeds[album.album_id] = max(0.0, float(speed))
         if album.album_id in self.download_transfer_pending:
@@ -4861,7 +4930,7 @@ class MainWindow(QMainWindow):
             return
         size_text = self.format_bytes(self.download_bytes.get(album_id, 0))
         speed_text = self.format_speed(self.download_speeds.get(album_id, 0.0))
-        transfer.setText(f"大小：{size_text}    速度：{speed_text}")
+        transfer.setText(f"已下：{size_text}    速度：{speed_text}")
 
     def on_download_album_done(self, album: AlbumMeta):
         if album.album_id in self.download_cancelled_ids:
@@ -4877,7 +4946,7 @@ class MainWindow(QMainWindow):
             if progress:
                 self.set_download_card_progress(progress, 1, 1, "100%")
             if transfer:
-                transfer.setText(f"大小：{self.format_bytes(self.download_bytes.get(album.album_id, 0))}    速度：已完成")
+                transfer.setText(f"已下：{self.format_bytes(self.download_bytes.get(album.album_id, 0))}    速度：已完成")
         self.download_done_counts[album.album_id] = self.download_totals.get(album.album_id, 1)
         self.update_download_summary()
 
@@ -4910,40 +4979,34 @@ class MainWindow(QMainWindow):
             if progress:
                 progress.setFormat("失败")
             if transfer:
-                transfer.setText(f"大小：{self.format_bytes(self.download_bytes.get(album_id, 0))}    速度：已停止")
+                transfer.setText(f"已下：{self.format_bytes(self.download_bytes.get(album_id, 0))}    速度：已停止")
 
     def cancel_album_download(self, album_id: str):
         worker = self.download_workers.get(album_id)
-        self.download_pending_queue = [album for album in self.download_pending_queue if album.album_id != album_id]
         self.download_cancelled_ids.add(album_id)
-        card = self.download_card_by_id.get(album_id)
-        if card:
-            status = card.findChild(QLabel, "downloadStatus")
-            progress = card.findChild(QProgressBar, "downloadProgress")
-            transfer = card.findChild(QLabel, "downloadTransfer")
-            cancel = card.findChild(QPushButton, "downloadCancel")
-            if status:
-                status.setText("取消中" if worker and worker.isRunning() else "已取消")
-            if progress:
-                progress.setFormat("取消中" if worker and worker.isRunning() else "已取消")
-            if transfer:
-                transfer.setText(f"大小：{self.format_bytes(self.download_bytes.get(album_id, 0))}    速度：已取消")
-            if cancel:
-                cancel.setEnabled(False)
+        self.queue = [album for album in self.queue if album.album_id != album_id]
+        self.download_pending_queue = [album for album in self.download_pending_queue if album.album_id != album_id]
+        self.cleanup_download_album_state(album_id)
+        self.refresh_queue_table()
+        self.update_download_summary()
         if worker and worker.isRunning():
             worker.cancel()
-            self.log(f"正在取消下载：{album_id}")
+            self.log(f"已取消并移出下载列表：{album_id}")
         else:
-            self.log(f"已取消等待任务：{album_id}")
-            self.pump_download_workers()
+            self.log(f"已移除等待下载任务：{album_id}")
+
+    def cleanup_download_album_state(self, album_id: str):
+        self.download_totals.pop(album_id, None)
+        self.download_done_counts.pop(album_id, None)
+        self.download_bytes.pop(album_id, None)
+        self.download_speeds.pop(album_id, None)
+        self.download_progress_pending.discard(album_id)
+        self.download_transfer_pending.discard(album_id)
 
     def forget_download_worker(self, album_id: str):
         self.download_workers.pop(album_id, None)
         if album_id not in {album.album_id for album in self.queue}:
-            self.download_totals.pop(album_id, None)
-            self.download_done_counts.pop(album_id, None)
-            self.download_bytes.pop(album_id, None)
-            self.download_speeds.pop(album_id, None)
+            self.cleanup_download_album_state(album_id)
         self.pump_download_workers()
         if not self.is_download_busy() and not self.download_pending_queue:
             self.on_all_downloads_finished()
@@ -5165,21 +5228,19 @@ class MainWindow(QMainWindow):
 
     def cancel_current_task(self):
         if self.download_workers:
+            active_ids = list(self.download_workers.keys())
             for worker in list(self.download_workers.values()):
                 if worker.isRunning():
                     worker.cancel()
-            self.download_cancelled_ids.update(self.download_workers.keys())
+            self.download_cancelled_ids.update(active_ids)
+            self.queue.clear()
             self.download_pending_queue.clear()
+            for album_id in active_ids:
+                self.cleanup_download_album_state(album_id)
+            self.refresh_queue_table()
+            self.update_download_summary()
             self.cancel_btn.setEnabled(False)
-            self.log("正在取消全部下载任务...")
-            for album_id, card in self.download_card_by_id.items():
-                if album_id in self.download_workers:
-                    status = card.findChild(QLabel, "downloadStatus")
-                    progress = card.findChild(QProgressBar, "downloadProgress")
-                    if status:
-                        status.setText("取消中")
-                    if progress:
-                        progress.setFormat("取消中")
+            self.log("已取消全部下载任务并清空下载列表。")
             return
         self.log("当前没有正在下载的任务。")
 

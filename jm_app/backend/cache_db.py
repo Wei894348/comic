@@ -5,10 +5,11 @@ from pathlib import Path
 from typing import Iterable, List, Optional
 
 from .models import AlbumMeta, ChapterMeta
+from .runtime_paths import sqlite_cache_path
 
 
 def default_cache_db_path() -> Path:
-    return Path.home() / ".comic18" / "comic18.sqlite3"
+    return sqlite_cache_path()
 
 
 class ComicCacheDB:

@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
+from .runtime_paths import downloads_dir
+
 
 @dataclass
 class ChapterMeta:
@@ -44,7 +46,7 @@ class NetworkConfig:
 
 @dataclass
 class DownloadConfig(NetworkConfig):
-    output_dir: Path = Path("downloads")
+    output_dir: Path = downloads_dir()
     image_threads: int = 2
     output_format: str = "pdf"
     pdf_split_chapters: bool = False

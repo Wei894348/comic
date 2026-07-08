@@ -407,16 +407,25 @@ class JmApiClient:
             if domain != photo.image_domain:
                 yield f"https://{domain}/media/photos/{photo.photo_id}/{image_name}"
 
-    def download_image(self, url: str, save_path: Path, scramble_id: str):
+    def download_image(self, url: str, save_path: Path, scramble_id: str, progress_callback=None):
         response = self._request(
             "GET",
             url,
             headers=self._image_headers(),
-            stream=False,
+            stream=True,
             timeout=(10, 60),
             retry_wait_cap=10,
         )
-        image_bytes = response.content
+        chunks = []
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if self.cancel_event.is_set():
+                raise RuntimeError("下载已取消")
+            if not chunk:
+                continue
+            chunks.append(chunk)
+            if progress_callback:
+                progress_callback(len(chunk))
+        image_bytes = b"".join(chunks)
         if not image_bytes:
             raise RuntimeError(f"图片为空: {url}")
 

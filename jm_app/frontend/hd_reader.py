@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import math
+import threading
 from io import BytesIO
 from collections import OrderedDict
 from pathlib import Path
@@ -37,6 +38,7 @@ from ..backend.models import AlbumMeta, ChapterMeta, DownloadConfig
 PDF_SUFFIXES = {".pdf"}
 SUPPORTED_READER_SUFFIXES = IMAGE_SUFFIXES | PDF_SUFFIXES
 PAGE_STITCH_GAP = 0
+PDFIUM_LOCK = threading.RLock()
 
 
 class PixmapCache:
@@ -133,45 +135,53 @@ class HdImageDecoder:
     def decode_pdf_page(path: Path, page_index: int, dpi: int = 300) -> QImage:
         if pdfium is None:
             raise RuntimeError("PDF 高清阅读需要安装 pypdfium2：pip install pypdfium2")
-        document = pdfium.PdfDocument(str(path))
-        try:
-            page = document[page_index]
+        with PDFIUM_LOCK:
+            document = pdfium.PdfDocument(str(path))
             try:
-                bitmap = page.render(scale=dpi / 72.0, rotation=0)
-                pil_image = bitmap.to_pil()
-                if pil_image.mode not in {"RGB", "RGBA"}:
-                    pil_image = pil_image.convert("RGBA")
-                return HdImageDecoder.pil_to_qimage(pil_image)
+                page = document[page_index]
+                try:
+                    bitmap = page.render(scale=dpi / 72.0, rotation=0)
+                    try:
+                        pil_image = bitmap.to_pil()
+                        if pil_image.mode not in {"RGB", "RGBA"}:
+                            pil_image = pil_image.convert("RGBA")
+                        return HdImageDecoder.pil_to_qimage(pil_image)
+                    finally:
+                        close_bitmap = getattr(bitmap, "close", None)
+                        if callable(close_bitmap):
+                            close_bitmap()
+                finally:
+                    page.close()
             finally:
-                page.close()
-        finally:
-            document.close()
+                document.close()
 
     @staticmethod
     def pdf_page_count(path: Path) -> int:
         if pdfium is None:
             raise RuntimeError("PDF 高清阅读需要安装 pypdfium2：pip install pypdfium2")
-        document = pdfium.PdfDocument(str(path))
-        try:
-            return len(document)
-        finally:
-            document.close()
+        with PDFIUM_LOCK:
+            document = pdfium.PdfDocument(str(path))
+            try:
+                return len(document)
+            finally:
+                document.close()
 
     @staticmethod
     def pdf_page_size(path: Path, page_index: int, dpi: int = 300) -> Tuple[int, int]:
         if pdfium is None:
             raise RuntimeError("PDF 高清阅读需要安装 pypdfium2：pip install pypdfium2")
-        document = pdfium.PdfDocument(str(path))
-        try:
-            page = document[page_index]
+        with PDFIUM_LOCK:
+            document = pdfium.PdfDocument(str(path))
             try:
-                width = max(1, int(float(page.get_width()) * dpi / 72.0))
-                height = max(1, int(float(page.get_height()) * dpi / 72.0))
-                return width, height
+                page = document[page_index]
+                try:
+                    width = max(1, int(float(page.get_width()) * dpi / 72.0))
+                    height = max(1, int(float(page.get_height()) * dpi / 72.0))
+                    return width, height
+                finally:
+                    page.close()
             finally:
-                page.close()
-        finally:
-            document.close()
+                document.close()
 
 
 class DecodeWorker(QThread):
@@ -285,6 +295,7 @@ class HdMangaReaderWindow(QWidget):
         self.last_scene_width = 0
         self.image_paths: Dict[int, Path] = {}
         self.pdf_path: Optional[Path] = None
+        self.pdf_fallback_image_paths: List[Path] = []
         self.decode_pending = set()
         self.failed_pages = set()
         self.page_count = 0
@@ -622,8 +633,10 @@ class HdMangaReaderWindow(QWidget):
 
     def start_decode_image_paths(self, paths: Iterable[Path]) -> None:
         self.reset_reader_state()
+        self._chapter_generation += 1
         image_paths = [path for path in paths if path.exists() and path.is_file()]
         self.pdf_path = None
+        self.pdf_fallback_image_paths = []
         self.failed_pages.clear()
         self.set_total_pages(len(image_paths))
         if not image_paths:
@@ -731,19 +744,30 @@ class HdMangaReaderWindow(QWidget):
             worker.start()
             running += 1
 
-    def start_decode_pdf(self, path: Path) -> None:
+    def start_decode_pdf(self, path: Path, fallback_image_paths: Optional[Iterable[Path]] = None) -> bool:
         self.reset_reader_state()
+        self._chapter_generation += 1
+        fallback_paths = [path for path in (fallback_image_paths or []) if path.exists() and path.is_file()]
         try:
             total = HdImageDecoder.pdf_page_count(path)
         except Exception as exc:
-            QMessageBox.warning(self, "PDF 阅读失败", str(exc))
+            if fallback_paths:
+                self.status_label.setText("PDF 解码失败，已切换原文件阅读")
+                self.start_decode_image_paths(fallback_paths)
+                return True
+            QMessageBox.warning(self, "PDF 阅读失败", f"{exc}\n\n可以在历史记录中选择“原文件”方式阅读。")
             self.status_label.setText("PDF 阅读失败")
-            return
+            return False
         if total <= 0:
+            if fallback_paths:
+                self.status_label.setText("PDF 无页面，已切换原文件阅读")
+                self.start_decode_image_paths(fallback_paths)
+                return True
             QMessageBox.warning(self, "PDF 阅读失败", "PDF 文件没有可渲染页面。")
             self.status_label.setText("PDF 无页面")
-            return
+            return False
         self.pdf_path = path
+        self.pdf_fallback_image_paths = fallback_paths
         self.image_paths = {}
         self.failed_pages.clear()
         self.set_total_pages(total)
@@ -760,6 +784,7 @@ class HdMangaReaderWindow(QWidget):
         self.layout_pages()
         self.apply_default_zoom()
         self.schedule_decode_window(1, radius=2)
+        return True
 
     def on_decoded(self, key: str, index: int, image: QImage, generation: Optional[int] = None) -> None:
         if generation is not None and generation != self._chapter_generation:
@@ -778,6 +803,10 @@ class HdMangaReaderWindow(QWidget):
         if self._closed:
             return
         self.failed_pages.add(index)
+        if self.pdf_path is not None and self.pdf_fallback_image_paths:
+            self.status_label.setText("PDF 页面解码失败，已切换原文件阅读")
+            self.start_decode_image_paths(self.pdf_fallback_image_paths)
+            return
         self.mark_decode_failed(index)
         self.status_label.setText(f"第 {index} 页解码失败，已跳过")
 
@@ -878,6 +907,7 @@ class HdMangaReaderWindow(QWidget):
         self.page_sizes.clear()
         self.image_paths.clear()
         self.pdf_path = None
+        self.pdf_fallback_image_paths = []
         self.page_count = 0
         self.loaded_count = 0
         self.current_page = 0

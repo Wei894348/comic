@@ -1,9 +1,9 @@
 import json
-from pathlib import Path
 from typing import Dict
 
+from .runtime_paths import cookie_file_path
 
-COOKIE_FILE = Path.cwd() / ".session" / "cookies.json"
+COOKIE_FILE = cookie_file_path()
 
 
 def cookie_dict_to_header(cookies: Dict[str, str]) -> str:

@@ -3,6 +3,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+from .runtime_paths import downloads_dir
+
 
 class ChapterSchema(BaseModel):
     chapter_id: str
@@ -41,7 +43,7 @@ class NetworkSettings(BaseModel):
 
 
 class DownloadSettings(NetworkSettings):
-    output_dir: Path = Path("downloads")
+    output_dir: Path = downloads_dir()
     image_threads: int = 4
     output_format: str = "pdf"
     pdf_split_chapters: bool = False
