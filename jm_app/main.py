@@ -17,5 +17,5 @@ def main():
     app.setDesktopFileName(APP_ID)
     app.setWindowIcon(app_icon())
     window = MainWindow()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec_())

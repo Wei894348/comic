@@ -14,7 +14,7 @@ def app_base_dir() -> Path:
 
 
 def app_data_dir() -> Path:
-    path = app_base_dir() / APP_DATA_FOLDER
+    path = app_base_dir() if getattr(sys, "frozen", False) else app_base_dir() / APP_DATA_FOLDER
     path.mkdir(parents=True, exist_ok=True)
     return path
 
