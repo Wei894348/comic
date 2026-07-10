@@ -312,8 +312,8 @@ class DownloadJob:
         else:
             raise RuntimeError(f"不支持的保存格式：{self.config.output_format}")
 
-        if self.config.output_format in {"zip", "pdf"} and not self.config.keep_images:
-            shutil.rmtree(album_dir, ignore_errors=True)
+        if self.config.output_format != "pdf":
+            outputs.extend(self._make_pdf_outputs(album_dir, chapters))
         return outputs
 
     def _prefetch_protocol_photos(
@@ -422,14 +422,14 @@ class DownloadJob:
         if self.config.pdf_split_chapters and len(chapters) > 1:
             outputs = []
             for chapter_dir in self._chapter_dirs(album_dir):
-                pdf_path = self._unique_path(album_dir.parent, f"{album_dir.name} - {chapter_dir.name}", ".pdf")
+                pdf_path = self._unique_path(album_dir, chapter_dir.name, ".pdf")
                 images_to_pdf(collect_images(chapter_dir), pdf_path)
                 outputs.append(pdf_path)
             return outputs
         image_paths = []
         for chapter_dir in self._chapter_dirs(album_dir):
             image_paths.extend(collect_images(chapter_dir))
-        pdf_path = self._unique_path(album_dir.parent, album_dir.name, ".pdf")
+        pdf_path = self._unique_path(album_dir, album_dir.name, ".pdf")
         images_to_pdf(image_paths, pdf_path)
         return [pdf_path]
 

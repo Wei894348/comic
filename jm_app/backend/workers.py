@@ -398,10 +398,9 @@ class DownloadWorker(QThread):
             else:
                 raise RuntimeError(f"不支持的保存格式：{self.config.output_format}")
 
+            if self.config.output_format != "pdf":
+                output_paths.extend(self._make_pdf_outputs(album_dir, chapters))
             self._validate_album_outputs(album, output_paths)
-            if self.config.output_format in {"zip", "pdf"} and not self.config.keep_images:
-                shutil.rmtree(album_dir, ignore_errors=True)
-                self.log.emit(f"已删除图片目录：{album_dir}")
             return output_paths
         except Exception:
             self._cleanup_incomplete_album(album_dir, output_paths)
@@ -654,7 +653,7 @@ class DownloadWorker(QThread):
         total_images = sum(len(collect_images(chapter_dir)) for chapter_dir in chapter_dirs)
         if self.config.pdf_split_chapters and len(chapters) > 1:
             for chapter_dir in chapter_dirs:
-                pdf_path = self._unique_path(album_dir.parent, f"{album_dir.name} - {chapter_dir.name}", ".pdf")
+                pdf_path = self._unique_path(album_dir, chapter_dir.name, ".pdf")
                 images_to_pdf(collect_images(chapter_dir), pdf_path)
                 outputs.append(pdf_path)
                 self.log.emit(f"已生成 PDF：{pdf_path}")
@@ -666,7 +665,7 @@ class DownloadWorker(QThread):
                     images = collect_images(chapter_dir)
                     if not images:
                         continue
-                    pdf_path = self._unique_path(album_dir.parent, f"{album_dir.name} - {chapter_dir.name}", ".pdf")
+                    pdf_path = self._unique_path(album_dir, chapter_dir.name, ".pdf")
                     images_to_pdf(images, pdf_path)
                     outputs.append(pdf_path)
                     self.log.emit(f"已生成 PDF：{pdf_path}")
@@ -675,7 +674,7 @@ class DownloadWorker(QThread):
             images = collect_images(album_dir)
             for start in range(0, len(images), PDF_MAX_IMAGES_PER_FILE):
                 part = start // PDF_MAX_IMAGES_PER_FILE + 1
-                pdf_path = self._unique_path(album_dir.parent, f"{album_dir.name} - part{part:02d}", ".pdf")
+                pdf_path = self._unique_path(album_dir, f"{album_dir.name} - part{part:02d}", ".pdf")
                 images_to_pdf(images[start:start + PDF_MAX_IMAGES_PER_FILE], pdf_path)
                 outputs.append(pdf_path)
                 self.log.emit(f"已生成 PDF：{pdf_path}")
@@ -684,7 +683,7 @@ class DownloadWorker(QThread):
         image_paths = []
         for chapter_dir in chapter_dirs:
             image_paths.extend(collect_images(chapter_dir))
-        pdf_path = self._unique_path(album_dir.parent, album_dir.name, ".pdf")
+        pdf_path = self._unique_path(album_dir, album_dir.name, ".pdf")
         images_to_pdf(image_paths, pdf_path)
         outputs.append(pdf_path)
         self.log.emit(f"已生成 PDF：{pdf_path}")

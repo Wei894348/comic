@@ -873,8 +873,10 @@ class MainWindow(QMainWindow):
         self.history_card_by_index: Dict[int, QFrame] = {}
         self.selected_history_index = -1
         self.history_visible_records: List[tuple[int, Dict[str, str]]] = []
-        self.history_render_limit = 50
-        self.history_render_batch = 50
+        self.history_render_limit = 24
+        self.history_render_batch = 24
+        self.history_view_mode = "list"
+        self.history_local_cover_cache: Dict[str, str] = {}
         self.history_drag_index = -1
         self.history_drag_record: Optional[Dict[str, str]] = None
         self.history_drag_start_pos = None
@@ -917,6 +919,7 @@ class MainWindow(QMainWindow):
         self.loading_tick = 0
         self.page_animation: Optional[QPropertyAnimation] = None
         self.active_animations = []
+        self.corner_notices = []
         self.drag_position = None
         self.home_auto_loaded = False
         self.cover_cache: Dict[str, QPixmap] = {}
@@ -987,10 +990,11 @@ class MainWindow(QMainWindow):
 
     def quit_from_tray(self) -> None:
         self._tray_quit_requested = True
+        self.show_corner_floating_notice("正在退出程序...", 1200)
         app = QApplication.instance()
         if app is not None:
             app.setQuitOnLastWindowClosed(True)
-        self.close()
+        QTimer.singleShot(0, self.close)
 
     def _apply_style(self):
         self.setStyleSheet(
@@ -1028,6 +1032,23 @@ class MainWindow(QMainWindow):
             }}
             QPushButton:hover {{ background: #f1f5f9; border-color:#b8c7d9; }}
             QPushButton:pressed {{ background: #e8eef7; }}
+            QPushButton#historySettingsButton {{
+                min-width: 86px;
+                max-width: 86px;
+                padding: 6px 8px;
+                border-radius: 8px;
+                color: #334155;
+                font-weight: 700;
+                background: #ffffff;
+            }}
+            QPushButton#historySettingsButton:hover {{
+                background: #f8fbff;
+                border-color: #9db8d8;
+            }}
+            QPushButton#historySettingsButton::menu-indicator {{
+                image: none;
+                width: 0;
+            }}
             QPushButton#primaryButton {{
                 background: {BLUE};
                 color: white;
@@ -1732,6 +1753,64 @@ class MainWindow(QMainWindow):
                 pass
 
         QTimer.singleShot(1800, close_notice)
+
+    def hide_to_lower_left(self):
+        if not self.isVisible():
+            return
+        if self.isMaximized():
+            self.showNormal()
+        screen = QApplication.primaryScreen()
+        available = screen.availableGeometry() if screen else self.geometry()
+        start_geo = self.geometry()
+        end_geo = QRect(
+            available.left() + 12,
+            available.bottom() - max(80, start_geo.height() // 3),
+            max(120, start_geo.width() // 3),
+            max(80, start_geo.height() // 3),
+        )
+        animation = QPropertyAnimation(self, b"geometry", self)
+        animation.setDuration(180)
+        animation.setStartValue(start_geo)
+        animation.setEndValue(end_geo)
+        animation.setEasingCurve(QEasingCurve.InQuad)
+        animation.finished.connect(self.hide)
+        animation.finished.connect(lambda: self.active_animations.remove(animation) if animation in self.active_animations else None)
+        self.active_animations.append(animation)
+        animation.start()
+
+    def show_corner_floating_notice(self, message: str, duration_ms: int = 2400):
+        notice = QLabel(message)
+        notice.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        notice.setAttribute(Qt.WA_TranslucentBackground, True)
+        notice.setAlignment(Qt.AlignCenter)
+        notice.setStyleSheet(
+            """
+            QLabel {
+                background:rgba(15, 23, 42, 232);
+                color:#ffffff;
+                border-radius:12px;
+                padding:10px 16px;
+                font-size:13px;
+                font-weight:800;
+            }
+            """
+        )
+        notice.adjustSize()
+        screen = QApplication.primaryScreen()
+        available = screen.availableGeometry() if screen else QRect(0, 0, 1024, 768)
+        width = min(max(notice.sizeHint().width(), 260), 460)
+        height = max(44, notice.sizeHint().height())
+        notice.setFixedSize(width, height)
+        notice.move(available.left() + 18, available.bottom() - height - 18)
+        notice.show()
+        self.corner_notices.append(notice)
+        QTimer.singleShot(duration_ms, lambda n=notice: self.close_corner_notice(n))
+
+    def close_corner_notice(self, notice: QLabel):
+        if notice in self.corner_notices:
+            self.corner_notices.remove(notice)
+        notice.hide()
+        notice.deleteLater()
 
     def enter_app(self, username: str = "", password: str = "", cookie: str = ""):
         self.session_username = username
@@ -2687,36 +2766,27 @@ class MainWindow(QMainWindow):
         header = QHBoxLayout()
         title = QLabel("历史下载记录")
         title.setObjectName("panelTitle")
-        mode_label = QLabel("阅读格式")
-        mode_label.setStyleSheet("color:#64748b;font-size:12px;font-weight:700;")
         self.history_read_mode_combo = QComboBox()
         self.history_read_mode_combo.addItems(["自动", "PDF", "原文件"])
         self.history_read_mode_combo.setFixedWidth(96)
-        filter_label = QLabel("显示格式")
-        filter_label.setStyleSheet("color:#64748b;font-size:12px;font-weight:700;")
         self.history_format_filter_combo = QComboBox()
         self.history_format_filter_combo.addItems(["全部", "图片", "PDF", "ZIP"])
         self.history_format_filter_combo.setFixedWidth(88)
         self.history_format_filter_combo.currentIndexChanged.connect(self.refresh_history_table)
-        read_btn = QPushButton("阅读选中")
-        read_btn.setObjectName("primaryButton")
-        read_btn.clicked.connect(self.open_selected_history_reading)
-        open_dir_btn = QPushButton("打开位置")
-        open_dir_btn.clicked.connect(self.open_selected_history_location)
-        delete_btn = QPushButton("删除选中")
-        delete_btn.clicked.connect(self.delete_selected_history_record)
-        clear_btn = QPushButton("清空历史")
-        clear_btn.clicked.connect(self.clear_download_history)
+        self.history_view_combo = QComboBox()
+        self.history_view_combo.addItems(["竖列", "九宫格"])
+        self.history_view_combo.setFixedWidth(82)
+        self.history_view_combo.currentIndexChanged.connect(self.change_history_view_mode)
+        self.history_settings_menu = self.build_history_settings_menu()
+        settings_btn = QPushButton("设置")
+        settings_btn.setObjectName("historySettingsButton")
+        settings_btn.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView))
+        settings_btn.setToolTip("历史记录设置")
+        settings_btn.setFixedWidth(86)
+        settings_btn.setMenu(self.history_settings_menu)
         header.addWidget(title)
         header.addStretch()
-        header.addWidget(filter_label)
-        header.addWidget(self.history_format_filter_combo)
-        header.addWidget(mode_label)
-        header.addWidget(self.history_read_mode_combo)
-        header.addWidget(open_dir_btn)
-        header.addWidget(read_btn)
-        header.addWidget(delete_btn)
-        header.addWidget(clear_btn)
+        header.addWidget(settings_btn)
         layout.addLayout(header)
 
         self.history_scroll = QScrollArea()
@@ -2734,6 +2804,54 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.history_scroll, 1)
         self.refresh_history_table()
         return panel
+
+    def build_history_settings_menu(self) -> QMenu:
+        menu = QMenu(self)
+        self.history_format_actions = {}
+        self.history_view_actions = {}
+        self.history_read_mode_actions = {}
+
+        format_menu = menu.addMenu("显示格式")
+        for text in ["全部", "图片", "PDF", "ZIP"]:
+            action = format_menu.addAction(text)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked=False, value=text: self.set_history_combo_text(self.history_format_filter_combo, value))
+            self.history_format_actions[text] = action
+
+        view_menu = menu.addMenu("视图")
+        for text in ["竖列", "九宫格"]:
+            action = view_menu.addAction(text)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked=False, value=text: self.set_history_combo_text(self.history_view_combo, value))
+            self.history_view_actions[text] = action
+
+        read_menu = menu.addMenu("阅读格式")
+        for text in ["自动", "PDF", "原文件"]:
+            action = read_menu.addAction(text)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked=False, value=text: self.set_history_combo_text(self.history_read_mode_combo, value))
+            self.history_read_mode_actions[text] = action
+
+        menu.addSeparator()
+        menu.addAction("扫描本地", self.sync_local_history_from_button)
+        menu.addSeparator()
+        menu.addAction("清空历史", self.clear_download_history)
+        menu.aboutToShow.connect(self.sync_history_settings_menu_state)
+        return menu
+
+    @staticmethod
+    def set_history_combo_text(combo: QComboBox, text: str):
+        index = combo.findText(text)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+
+    def sync_history_settings_menu_state(self):
+        for text, action in getattr(self, "history_format_actions", {}).items():
+            action.setChecked(self.history_format_filter_combo.currentText() == text)
+        for text, action in getattr(self, "history_view_actions", {}).items():
+            action.setChecked(self.history_view_combo.currentText() == text)
+        for text, action in getattr(self, "history_read_mode_actions", {}).items():
+            action.setChecked(self.history_read_mode_combo.currentText() == text)
 
     def refresh_history_table(self):
         if not hasattr(self, "history_cards_layout"):
@@ -2774,6 +2892,7 @@ class MainWindow(QMainWindow):
     def current_history_refresh_key(self):
         combo = getattr(self, "history_format_filter_combo", None)
         selected = combo.currentText() if combo else "全部"
+        view_mode = self.current_history_view_mode()
         records_key = tuple(
             (
                 record.get("album_id") or record.get("id") or "",
@@ -2786,7 +2905,18 @@ class MainWindow(QMainWindow):
             )
             for record in self.download_history
         )
-        return selected, records_key
+        return selected, view_mode, records_key
+
+    def current_history_view_mode(self) -> str:
+        combo = getattr(self, "history_view_combo", None)
+        text = combo.currentText() if combo else ""
+        return "grid" if text == "九宫格" else "list"
+
+    def change_history_view_mode(self, *_):
+        self.history_view_mode = self.current_history_view_mode()
+        self.history_refresh_key = None
+        self.history_render_limit = min(self.history_render_batch, len(getattr(self, "history_visible_records", [])) or self.history_render_batch)
+        self.refresh_history_table()
 
     def render_history_cards(self, reset_scroll: bool = False):
         if not hasattr(self, "history_cards_layout"):
@@ -2808,6 +2938,9 @@ class MainWindow(QMainWindow):
     def append_history_cards(self, start: int, end: int):
         if not hasattr(self, "history_cards_layout"):
             return
+        if self.current_history_view_mode() == "grid":
+            self.append_history_grid_cards(start, end)
+            return
         insert_at = max(0, self.history_cards_layout.count() - 1)
         for source_index, record in self.history_visible_records[start:end]:
             if source_index in self.history_card_by_index:
@@ -2816,6 +2949,30 @@ class MainWindow(QMainWindow):
             self.history_card_by_index[source_index] = card
             self.history_cards_layout.insertWidget(insert_at, card)
             insert_at += 1
+
+    def append_history_grid_cards(self, start: int, end: int):
+        columns = self.history_grid_column_count()
+        insert_at = max(0, self.history_cards_layout.count() - 1)
+        batch = self.history_visible_records[start:end]
+        for row_start in range(0, len(batch), columns):
+            row_widget = QWidget()
+            row_widget.setObjectName("historyGridRow")
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(18)
+            for source_index, record in batch[row_start:row_start + columns]:
+                if source_index in self.history_card_by_index:
+                    continue
+                card = self.create_history_card(record, source_index)
+                self.history_card_by_index[source_index] = card
+                row_layout.addWidget(card)
+            row_layout.addStretch()
+            self.history_cards_layout.insertWidget(insert_at, row_widget)
+            insert_at += 1
+
+    def history_grid_column_count(self) -> int:
+        viewport_width = self.history_scroll.viewport().width() if hasattr(self, "history_scroll") else self.width()
+        return max(2, min(6, viewport_width // 168))
 
     def on_history_scroll_value_changed(self, value: int):
         if not getattr(self, "history_visible_records", None):
@@ -2849,6 +3006,8 @@ class MainWindow(QMainWindow):
         return True
 
     def create_history_card(self, record: Dict[str, str], index: int) -> QFrame:
+        if self.current_history_view_mode() == "grid":
+            return self.create_history_grid_card(record, index)
         card = QFrame()
         card.setObjectName("historyCard")
         card.setProperty("selected", index == self.selected_history_index)
@@ -2952,6 +3111,74 @@ class MainWindow(QMainWindow):
             card.mouseDoubleClickEvent = lambda event, idx=index: self.select_history_record(idx, open_reader=True)
         return card
 
+    def create_history_grid_card(self, record: Dict[str, str], index: int) -> QFrame:
+        card = QFrame()
+        card.setObjectName("historyGridCard")
+        card.setProperty("selected", index == self.selected_history_index)
+        card.setProperty("history_index", index)
+        card.setFixedWidth(146)
+        card.setMinimumHeight(238)
+        card.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        card.setStyleSheet(self.history_card_style(index == self.selected_history_index, grid=True))
+
+        outer = QVBoxLayout(card)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(7)
+
+        cover_box = QFrame()
+        cover_box.setObjectName("historyGridCoverBox")
+        cover_box.setFixedSize(132, 176)
+        cover_box.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        cover = QLabel(cover_box)
+        cover.setObjectName("historyGridCover")
+        cover._persistent_cover = True
+        cover.setGeometry(0, 0, 132, 176)
+        cover.setAlignment(Qt.AlignCenter)
+        cover.setText("封面")
+        self.queue_history_cover(record, cover)
+
+        progress = QLabel(self.history_read_progress_text(record), cover_box)
+        progress.setObjectName("historyGridProgress")
+        progress.adjustSize()
+        progress.setGeometry(8, 144, 62, 24)
+        progress.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+        badge = QLabel("阅", cover_box)
+        badge.setObjectName("historyGridReadBadge")
+        badge.setGeometry(100, 142, 32, 32)
+        badge.setAlignment(Qt.AlignCenter)
+
+        outer.addWidget(cover_box, 0, Qt.AlignHCenter)
+
+        title_text = record.get("title") or Path(record.get("path", "")).stem or "未命名漫画"
+        title = QLabel(title_text)
+        title.setObjectName("historyGridTitle")
+        title.setWordWrap(True)
+        title.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        title.setToolTip(title_text)
+        title.setFixedHeight(48)
+        outer.addWidget(title)
+
+        if index >= 0:
+            card.setCursor(Qt.PointingHandCursor)
+            card.mousePressEvent = lambda event, idx=index, widget=card: self.handle_history_card_mouse_press(event, idx, widget)
+            card.mouseMoveEvent = lambda event, idx=index, widget=card: self.handle_history_card_mouse_move(event, idx, widget)
+            card.mouseReleaseEvent = lambda event, idx=index, widget=card: self.handle_history_card_mouse_release(event, idx, widget)
+            card.mouseDoubleClickEvent = lambda event, idx=index: self.select_history_record(idx, open_reader=True)
+        return card
+
+    def history_read_progress_text(self, record: Dict[str, str]) -> str:
+        page = self.history_record_last_page(record)
+        total = self.history_record_last_total(record)
+        if page > 0 and total > 0:
+            if page >= total:
+                return "已读完"
+            return f"{max(0, min(100, int(page * 100 / total)))}%"
+        if page > 0:
+            return f"第{page}页"
+        return "0%"
+
     def queue_history_cover(self, record: Dict[str, str], label: QLabel):
         generation = self.history_render_generation
         label._history_generation = generation
@@ -2965,7 +3192,7 @@ class MainWindow(QMainWindow):
     def flush_history_cover_queue(self):
         generation = self.history_render_generation
         processed = 0
-        while self.history_cover_queue and processed < 4:
+        while self.history_cover_queue and processed < 2:
             item_generation, record, label = self.history_cover_queue.pop(0)
             if item_generation != generation or getattr(label, "_history_generation", None) != generation:
                 continue
@@ -2977,7 +3204,54 @@ class MainWindow(QMainWindow):
         if self.history_cover_queue:
             self.history_cover_timer.start(35)
 
-    def history_card_style(self, selected: bool = False) -> str:
+    def history_card_style(self, selected: bool = False, grid: bool = False) -> str:
+        if grid:
+            border = "#f3c768" if selected else "transparent"
+            background = "#fff7df" if selected else "transparent"
+            glow = "rgba(245, 158, 11, 80)" if selected else "rgba(15, 23, 42, 36)"
+            return f"""
+                QFrame#historyGridCard {{
+                    background:{background};
+                    border:2px solid {border};
+                    border-radius:10px;
+                }}
+                QFrame#historyGridCoverBox {{
+                    background:#eef0f4;
+                    border-radius:11px;
+                    border:1px solid rgba(148,163,184,120);
+                }}
+                QLabel#historyGridCover {{
+                    background:#eef0f4;
+                    border-radius:11px;
+                    color:#8b95a5;
+                }}
+                QLabel#historyGridTitle {{
+                    color:#111827;
+                    font-size:16px;
+                    font-weight:800;
+                    background:transparent;
+                }}
+                QLabel#historyGridProgress {{
+                    color:#ffffff;
+                    background:rgba(15,23,42,120);
+                    border-radius:8px;
+                    padding:1px 5px;
+                    font-size:14px;
+                    font-weight:900;
+                }}
+                QLabel#historyGridReadBadge {{
+                    color:#111827;
+                    background:#ffffff;
+                    border:3px solid #111827;
+                    border-radius:16px;
+                    font-size:13px;
+                    font-weight:900;
+                }}
+                QFrame#historyGridCard[selected="true"] QFrame#historyGridCoverBox {{
+                    border:2px solid #f59e0b;
+                    background:{glow};
+                }}
+            """
         border = "#2f80ed" if selected else "#dfe7f2"
         background = "#f8fbff" if selected else "#ffffff"
         return f"""
@@ -3072,6 +3346,13 @@ class MainWindow(QMainWindow):
         return QPixmap(str(path))
 
     def find_history_local_cover(self, record: Dict[str, str]) -> Optional[Path]:
+        cache_key = self.history_cover_cache_key(record)
+        cached = self.history_local_cover_cache.get(cache_key)
+        if cached:
+            cached_path = Path(cached)
+            if cached_path.exists():
+                return cached_path
+            self.history_local_cover_cache.pop(cache_key, None)
         paths: List[Path] = []
         for key in ("cover_path", "local_cover", "thumbnail", "image_dir", "path", "pdf_path"):
             value = record.get(key)
@@ -3096,8 +3377,22 @@ class MainWindow(QMainWindow):
                 continue
             images = collect_images(directory) or collect_images_recursive(directory)
             if images:
+                self.history_local_cover_cache[cache_key] = str(images[0])
                 return images[0]
         return None
+
+    @staticmethod
+    def history_cover_cache_key(record: Dict[str, str]) -> str:
+        values = [
+            str(record.get("album_id") or record.get("id") or ""),
+            str(record.get("path") or ""),
+            str(record.get("pdf_path") or ""),
+            str(record.get("image_dir") or ""),
+        ]
+        outputs = record.get("outputs") or []
+        if isinstance(outputs, list):
+            values.extend(str(value) for value in outputs)
+        return "|".join(values)
 
     def select_history_record(self, index: int, open_reader: bool = False, open_location: bool = False):
         if index < 0 or index >= len(self.download_history):
@@ -3107,11 +3402,15 @@ class MainWindow(QMainWindow):
         for idx in {old_index, index}:
             card = self.history_card_by_index.get(idx)
             if card:
-                card.setStyleSheet(self.history_card_style(idx == self.selected_history_index))
+                self.set_history_card_selected(card, idx == self.selected_history_index)
         if open_reader:
             self.open_selected_history_reading()
         elif open_location:
             self.open_selected_history_location()
+
+    def set_history_card_selected(self, card: QWidget, selected: bool):
+        card.setProperty("selected", selected)
+        card.setStyleSheet(self.history_card_style(selected, grid=card.objectName() == "historyGridCard"))
 
     def handle_history_card_mouse_press(self, event, index: int, card: Optional[QWidget] = None):
         if index < 0 or index >= len(self.download_history):
@@ -3130,6 +3429,8 @@ class MainWindow(QMainWindow):
 
     def handle_history_card_mouse_move(self, event, index: int, card: Optional[QWidget] = None):
         if self.history_drag_index < 0 or self.history_drag_record is None or self.history_drag_start_pos is None:
+            return
+        if self.current_history_view_mode() == "grid":
             return
         combo = getattr(self, "history_format_filter_combo", None)
         if combo and combo.currentText() != "全部":
@@ -3166,7 +3467,6 @@ class MainWindow(QMainWindow):
         self.history_dragging = True
         self.history_drag_card = card
         self.history_drag_last_move_at = 0.0
-        card_pixmap = card.grab()
         placeholder = self.create_history_drop_placeholder(card.height())
         insert_at = self.history_layout_index_of(card)
         self.history_cards_layout.insertWidget(max(0, insert_at), placeholder)
@@ -3180,13 +3480,13 @@ class MainWindow(QMainWindow):
         ghost.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         ghost_width = min(card.width(), max(260, viewport.width() - 18))
         ghost_height = card.height()
-        ghost.setPixmap(card_pixmap.scaled(ghost_width, ghost_height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation))
+        title = ""
+        if isinstance(self.history_drag_record, dict):
+            title = self.history_drag_record.get("title") or self.history_drag_record.get("file") or ""
+        ghost.setText(QFontMetrics(self.font()).elidedText(title or "移动历史记录", Qt.ElideRight, max(120, ghost_width - 28)))
+        ghost.setAlignment(Qt.AlignCenter)
         ghost.setFixedSize(ghost_width, ghost_height)
-        ghost.setScaledContents(True)
-        ghost.setStyleSheet("border:1px solid #93c5fd;border-radius:14px;background:rgba(255,255,255,226);")
-        effect = QGraphicsOpacityEffect(ghost)
-        effect.setOpacity(0.88)
-        ghost.setGraphicsEffect(effect)
+        ghost.setStyleSheet("color:#0f172a;border:1px solid #93c5fd;border-radius:14px;background:rgba(255,255,255,232);font-size:13px;font-weight:800;")
         ghost.show()
         ghost.raise_()
         self.history_drag_ghost = ghost
@@ -3215,7 +3515,7 @@ class MainWindow(QMainWindow):
         if ghost is None:
             return
         now = time.monotonic()
-        if now - self.history_drag_last_move_at < 0.012:
+        if now - self.history_drag_last_move_at < 0.035:
             return
         self.history_drag_last_move_at = now
         viewport = self.history_scroll.viewport() if hasattr(self, "history_scroll") else self
@@ -3482,13 +3782,22 @@ class MainWindow(QMainWindow):
             self.show_toast("历史记录已清空")
         self.log(f"已清空历史记录并删除本地资源：删除 {deleted} 个路径，失败 {len(failed)} 个。")
 
+    def sync_local_history_from_button(self):
+        removed, added = self.sync_history_with_local_files()
+        if removed or added:
+            self.refresh_history_table()
+            self.show_toast(f"本地扫描完成：导入 {added} 条，移除失效 {removed} 条", 2200)
+        else:
+            self.show_toast("本地扫描完成：没有发现新的漫画", 1800)
+
     def sync_history_with_local_files(self):
         if getattr(self, "_syncing_history_files", False):
-            return
+            return 0, 0
         self._syncing_history_files = True
+        removed = 0
+        added = 0
         try:
             kept = []
-            removed = 0
             for record in self.download_history:
                 if self.history_record_has_local_file(record):
                     kept.append(record)
@@ -3503,6 +3812,7 @@ class MainWindow(QMainWindow):
             if added:
                 self.save_local_cache()
                 self.log(f"已同步本地下载资源到历史记录：新增 {added} 条。")
+            return removed, added
         finally:
             self._syncing_history_files = False
 
@@ -3515,36 +3825,155 @@ class MainWindow(QMainWindow):
         for root in self.unique_existing_dirs(roots):
             for path in self.iter_completed_local_outputs(root):
                 album_id = self.album_id_from_local_output(path)
-                if album_id and self.find_history_index_for_album(album_id) >= 0:
-                    continue
-                if self.find_history_index_for_output(path) >= 0:
-                    continue
                 record = self.history_record_from_local_output(path, album_id)
-                if record:
-                    self.download_history.append(record)
-                    added += 1
+                if not record:
+                    continue
+                existing_index = self.find_history_index_for_album(album_id) if album_id else -1
+                if existing_index < 0:
+                    existing_index = self.find_history_index_for_output(path)
+                if existing_index >= 0:
+                    if self.merge_history_record_local_output(existing_index, record):
+                        added += 1
+                    continue
+                self.download_history.append(record)
+                added += 1
         if added:
             self.selected_history_index = len(self.download_history) - 1
         return added
+
+    def merge_history_record_local_output(self, index: int, incoming: Dict[str, str]) -> bool:
+        if index < 0 or index >= len(self.download_history):
+            return False
+        record = self.download_history[index]
+        changed = False
+
+        for key in ("title", "file", "album_id", "cover_url"):
+            if not record.get(key) and incoming.get(key):
+                record[key] = incoming.get(key, "")
+                changed = True
+        for key in ("path", "pdf_path", "image_dir"):
+            incoming_value = incoming.get(key) or ""
+            if not incoming_value:
+                continue
+            current_value = record.get(key) or ""
+            if not current_value or not self.is_completed_local_resource(Path(current_value).expanduser()):
+                record[key] = incoming_value
+                changed = True
+
+        outputs = []
+        for value in [record.get("path") or "", record.get("pdf_path") or "", record.get("image_dir") or ""]:
+            if str(value).strip():
+                outputs.append(str(value))
+        old_outputs = record.get("outputs") or []
+        if isinstance(old_outputs, list):
+            outputs.extend(str(value) for value in old_outputs if str(value).strip())
+        new_outputs = incoming.get("outputs") or []
+        if isinstance(new_outputs, list):
+            outputs.extend(str(value) for value in new_outputs if str(value).strip())
+
+        unique_outputs = []
+        seen_outputs = set()
+        for value in outputs:
+            path = Path(value).expanduser()
+            if not self.is_completed_local_resource(path):
+                continue
+            key = self.normalized_history_path(path)
+            if key in seen_outputs:
+                continue
+            seen_outputs.add(key)
+            unique_outputs.append(str(path))
+        if unique_outputs != (record.get("outputs") or []):
+            record["outputs"] = unique_outputs
+            changed = True
+
+        if incoming.get("image_dir") and record.get("format") not in {"images", "image"}:
+            record["format"] = "images"
+            changed = True
+        return changed
 
     def iter_completed_local_outputs(self, root: Path) -> List[Path]:
         if not root.exists() or not root.is_dir():
             return []
         outputs: List[Path] = []
-        children = []
-        for child in root.iterdir():
+        seen = set()
+
+        def add_output(path: Path):
+            normalized = self.normalized_history_path(path)
+            if normalized in seen:
+                return
+            seen.add(normalized)
+            outputs.append(path)
+
+        def walk(directory: Path, is_root: bool = False):
+            children = []
             try:
-                children.append((child.stat().st_mtime, child))
+                iterator = directory.iterdir()
             except OSError:
-                continue
-        for _, child in sorted(children, key=lambda item: item[0], reverse=True):
-            if child.name.startswith("."):
-                continue
-            if child.is_file() and child.suffix.lower() in {".pdf", ".zip"} and self.is_completed_local_resource(child):
-                outputs.append(child)
-            elif child.is_dir() and self.is_completed_local_resource(child):
-                outputs.append(child)
+                return
+            for child in iterator:
+                try:
+                    children.append((child.stat().st_mtime, child))
+                except OSError:
+                    continue
+            for _, child in sorted(children, key=lambda item: item[0], reverse=True):
+                if child.name.startswith("."):
+                    continue
+                if child.is_file():
+                    if child.suffix.lower() in {".pdf", ".zip"} and self.is_completed_local_resource(child):
+                        add_output(child)
+                    continue
+                if not child.is_dir():
+                    continue
+                if self.is_local_album_output_dir(child):
+                    add_output(child)
+                    continue
+                walk(child)
+
+        walk(root, is_root=True)
         return outputs
+
+    def is_local_album_output_dir(self, directory: Path) -> bool:
+        try:
+            if collect_images(directory):
+                return True
+            direct_files = [
+                child
+                for child in directory.iterdir()
+                if child.is_file() and child.suffix.lower() in {".pdf", ".zip"} and child.stat().st_size > 0
+            ]
+            has_reader_images = bool(self.collect_local_reader_images(directory))
+            if has_reader_images and direct_files:
+                return True
+            child_image_dirs = [
+                child
+                for child in directory.iterdir()
+                if child.is_dir() and not child.name.startswith(".") and collect_images(child)
+            ]
+            if child_image_dirs and (
+                self.album_id_from_local_output(directory)
+                or len(child_image_dirs) == 1
+                or any(re.search(r"(^\d+|第.+[话話章]|chapter|chap|ch)", child.name, re.IGNORECASE) for child in child_image_dirs)
+            ):
+                return True
+            return False
+        except OSError:
+            return False
+
+    def direct_local_output_files(self, directory: Path) -> List[Path]:
+        if not directory.exists() or not directory.is_dir():
+            return []
+        try:
+            return sorted(
+                (
+                    child
+                    for child in directory.iterdir()
+                    if child.is_file() and child.suffix.lower() in {".pdf", ".zip"} and child.stat().st_size > 0
+                ),
+                key=lambda path: self.local_chapter_sort_key(path.name),
+            )
+        except OSError:
+            return []
+
 
     @staticmethod
     def album_id_from_local_output(path: Path) -> str:
@@ -3558,7 +3987,11 @@ class MainWindow(QMainWindow):
         if album_id:
             title = re.sub(rf"^JM?{re.escape(album_id)}[-_\s]*", "", title, flags=re.IGNORECASE) or title
         image_dir = self.resolve_history_image_dir(path)
-        pdf_path = str(path) if path.is_file() and path.suffix.lower() == ".pdf" else ""
+        output_paths = [path]
+        if path.is_dir():
+            output_paths.extend(self.direct_local_output_files(path))
+        pdf_candidates = [item for item in output_paths if item.is_file() and item.suffix.lower() == ".pdf"]
+        pdf_path = str(pdf_candidates[0]) if pdf_candidates else ""
         album = self.albums.get(album_id) or self.detail_cache.get(album_id) if album_id else None
         return {
             "title": album.title if album else title,
@@ -3571,7 +4004,7 @@ class MainWindow(QMainWindow):
             "format": path.suffix.lstrip(".") if path.is_file() else "images",
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "sort_order": str(len(self.download_history)),
-            "outputs": [str(path)],
+            "outputs": [str(item) for item in output_paths],
         }
 
     def history_record_has_local_file(self, record: Dict[str, str]) -> bool:
@@ -3585,7 +4018,7 @@ class MainWindow(QMainWindow):
         try:
             path = path.expanduser()
             if path.is_dir():
-                return bool(self.collect_local_reader_images(path))
+                return bool(self.collect_local_reader_images(path) or self.direct_local_output_files(path))
             if not path.is_file() or path.stat().st_size <= 0:
                 return False
             return path.suffix.lower() in {".pdf", ".zip"} | IMAGE_SUFFIXES
@@ -3738,6 +4171,9 @@ class MainWindow(QMainWindow):
             text = self.history_fixed_meta_text(record)
             fixed_label.setText(text)
             fixed_label.setToolTip(text)
+        grid_progress = card.findChild(QLabel, "historyGridProgress")
+        if grid_progress is not None:
+            grid_progress.setText(self.history_read_progress_text(record))
 
     def history_fixed_meta_text(self, record: Dict[str, str]) -> str:
         items = []
@@ -4304,15 +4740,10 @@ class MainWindow(QMainWindow):
         ):
             event.ignore()
             self.settings_cache = self.current_settings_snapshot()
-            self.save_local_cache()
-            self.hide()
+            QTimer.singleShot(260, self.save_local_cache)
+            self.hide_to_lower_left()
             if not self._tray_notice_shown:
-                self.tray_icon.showMessage(
-                    APP_DISPLAY_NAME,
-                    "程序已隐藏到系统托盘，双击托盘图标可恢复窗口。",
-                    QSystemTrayIcon.Information,
-                    2500,
-                )
+                self.show_corner_floating_notice("程序已隐藏到左下角，双击托盘图标可恢复窗口")
                 self._tray_notice_shown = True
             return
 
