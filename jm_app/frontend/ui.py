@@ -887,6 +887,8 @@ class MainWindow(QMainWindow):
         self.history_drop_placeholder: Optional[QFrame] = None
         self.history_drop_index = -1
         self.history_drag_last_move_at = 0.0
+        self.history_drag_last_autoscroll_at = 0.0
+        self.history_drag_target_centers: List[tuple[int, int]] = []
         self.history_render_generation = 0
         self.history_cover_queue: List[tuple[int, Dict[str, str], QLabel]] = []
         self.history_cover_timer = QTimer(self)
@@ -3473,6 +3475,7 @@ class MainWindow(QMainWindow):
         card.hide()
         self.history_drop_placeholder = placeholder
         self.history_drop_index = max(0, insert_at)
+        self.refresh_history_drag_targets()
 
         viewport = self.history_scroll.viewport() if hasattr(self, "history_scroll") else self
         ghost = QLabel(viewport)
@@ -3539,14 +3542,24 @@ class MainWindow(QMainWindow):
     def autoscroll_history_drag(self, global_pos):
         if not hasattr(self, "history_scroll"):
             return
+        now = time.monotonic()
+        if now - self.history_drag_last_autoscroll_at < 0.055:
+            return
+        self.history_drag_last_autoscroll_at = now
         viewport = self.history_scroll.viewport()
         local = viewport.mapFromGlobal(global_pos)
         bar = self.history_scroll.verticalScrollBar()
         margin = 42
         if local.y() < margin:
-            bar.setValue(max(bar.minimum(), bar.value() - 10))
+            old_value = bar.value()
+            bar.setValue(max(bar.minimum(), old_value - 12))
+            if bar.value() != old_value:
+                self.refresh_history_drag_targets()
         elif local.y() > viewport.height() - margin:
-            bar.setValue(min(bar.maximum(), bar.value() + 10))
+            old_value = bar.value()
+            bar.setValue(min(bar.maximum(), old_value + 12))
+            if bar.value() != old_value:
+                self.refresh_history_drag_targets()
 
     def finish_history_drag(self):
         if self.history_drop_placeholder is not None:
@@ -3584,6 +3597,8 @@ class MainWindow(QMainWindow):
         self.history_dragging = False
         self.history_drag_card = None
         self.history_drag_last_move_at = 0.0
+        self.history_drag_last_autoscroll_at = 0.0
+        self.history_drag_target_centers = []
 
     def cleanup_history_drag_artifacts(self):
         if self.history_drag_card is not None:
@@ -3606,6 +3621,7 @@ class MainWindow(QMainWindow):
                     widget.deleteLater()
         self.history_drop_placeholder = None
         self.history_drop_index = -1
+        self.history_drag_target_centers = []
 
     def history_layout_index_of(self, widget: QWidget) -> int:
         for index in range(self.history_cards_layout.count()):
@@ -3614,21 +3630,33 @@ class MainWindow(QMainWindow):
                 return index
         return max(0, self.history_cards_layout.count() - 1)
 
+    def refresh_history_drag_targets(self):
+        if not hasattr(self, "history_cards_layout"):
+            self.history_drag_target_centers = []
+            return
+        targets: List[tuple[int, int]] = []
+        for layout_index in range(self.history_cards_layout.count()):
+            item = self.history_cards_layout.itemAt(layout_index)
+            widget = item.widget() if item else None
+            if widget is None or widget is self.history_drop_placeholder or widget is self.history_drag_card:
+                continue
+            if widget.objectName() == "historyDropPlaceholder":
+                continue
+            targets.append((layout_index, widget.mapToGlobal(widget.rect().center()).y()))
+        self.history_drag_target_centers = targets
+
     def move_history_drop_placeholder(self, global_y: int):
         placeholder = self.history_drop_placeholder
         if placeholder is None:
             return
+        if not self.history_drag_target_centers:
+            self.refresh_history_drag_targets()
         target_index = max(0, self.history_cards_layout.count() - 1)
-        for layout_index in range(self.history_cards_layout.count()):
-            item = self.history_cards_layout.itemAt(layout_index)
-            widget = item.widget() if item else None
-            if widget is None or widget is placeholder or widget is self.history_drag_card:
-                continue
-            center_y = widget.mapToGlobal(widget.rect().center()).y()
+        for layout_index, center_y in self.history_drag_target_centers:
             if global_y <= center_y:
                 target_index = layout_index
                 break
-        current_index = self.history_layout_index_of(placeholder)
+        current_index = self.history_drop_index if self.history_drop_index >= 0 else self.history_layout_index_of(placeholder)
         if target_index > current_index:
             target_index -= 1
         target_index = max(0, min(target_index, max(0, self.history_cards_layout.count() - 2)))
@@ -3637,6 +3665,7 @@ class MainWindow(QMainWindow):
         self.history_cards_layout.removeWidget(placeholder)
         self.history_cards_layout.insertWidget(max(0, target_index), placeholder)
         self.history_drop_index = target_index
+        self.refresh_history_drag_targets()
 
     def history_display_order_from_placeholder(self) -> List[int]:
         source_index = self.history_drag_index
