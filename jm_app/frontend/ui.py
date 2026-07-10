@@ -25,10 +25,11 @@ from PyQt5.QtCore import (
     QUrl,
     pyqtSignal,
 )
-from PyQt5.QtGui import QDesktopServices, QFontMetrics, QImageReader, QKeySequence, QMovie, QPainter, QPixmap
+from PyQt5.QtGui import QDesktopServices, QFontMetrics, QIcon, QImageReader, QKeySequence, QMovie, QPainter, QPixmap
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest
 from PyQt5.QtWidgets import (
     QAbstractItemView,
+    QAction,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -44,7 +45,6 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMenu,
-    QMessageBox,
     QPushButton,
     QButtonGroup,
     QApplication,
@@ -55,6 +55,7 @@ from PyQt5.QtWidgets import (
     QSpinBox,
     QStackedWidget,
     QStyle,
+    QSystemTrayIcon,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -72,7 +73,8 @@ from ..backend.jm_api import API_DOMAINS, APP_USER_AGENT, APP_VERSION, IMAGE_DOM
 from ..backend.jmcomic_defaults import jmcomic_default_cookie_header
 from ..backend.models import AlbumMeta, ChapterMeta, DownloadConfig, NetworkConfig
 from .hd_reader import HdMangaReaderWindow, collect_reader_files
-from ..backend.pdf_utils import IMAGE_SUFFIXES, collect_images
+from .toast import ToastManager
+from ..backend.pdf_utils import IMAGE_SUFFIXES, collect_images, collect_images_recursive
 from ..backend.runtime_paths import app_data_dir, downloads_dir, reader_cache_dir, ui_cache_path
 from ..backend.utils import parse_cookie_header, split_ids
 from ..backend.workers import ChapterWorker, DownloadWorker, IncrementalUpdateWorker, ReaderWorker, ScrapeWorker
@@ -93,6 +95,18 @@ def elide_label_text(label: QLabel, text: str, fallback_width: int = 220) -> Non
     metrics = QFontMetrics(label.font())
     label.setText(metrics.elidedText(full_text, Qt.ElideRight, width))
     label.setToolTip(full_text)
+
+
+def nav_icon(name: str) -> QIcon:
+    icon = QIcon()
+    normal = ASSETS_DIR / "nav_icons" / f"{name}.svg"
+    active = ASSETS_DIR / "nav_icons" / f"{name}_active.svg"
+    if normal.exists():
+        icon.addFile(str(normal), QSize(28, 28), QIcon.Normal, QIcon.Off)
+    if active.exists():
+        icon.addFile(str(active), QSize(28, 28), QIcon.Normal, QIcon.On)
+        icon.addFile(str(active), QSize(28, 28), QIcon.Active, QIcon.On)
+    return icon
 
 
 class ReaderDialog(QDialog):
@@ -434,7 +448,7 @@ class ReaderDialog(QDialog):
     def on_failed(self, message: str):
         if self._closing:
             return
-        QMessageBox.warning(self, "阅读加载失败", message)
+        ToastManager.show(f"阅读加载失败：{message}", 2200)
 
     def on_finished(self):
         self.progress.setFormat("加载完成")
@@ -793,7 +807,14 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_DISPLAY_NAME)
-        self.setWindowIcon(app_icon())
+        icon = app_icon()
+        self.setWindowIcon(icon)
+        QApplication.instance().setWindowIcon(icon)
+        app = QApplication.instance()
+        if app is not None:
+            app.setQuitOnLastWindowClosed(False)
+            app.installEventFilter(self)
+        ToastManager.init(self)
         self.resize(360, 500)
         self.setMinimumSize(330, 460)
         self.albums: Dict[str, AlbumMeta] = {}
@@ -839,6 +860,8 @@ class MainWindow(QMainWindow):
         self.download_workers: Dict[str, DownloadWorker] = {}
         self.download_totals: Dict[str, int] = {}
         self.download_done_counts: Dict[str, int] = {}
+        self.download_chapter_totals: Dict[str, int] = {}
+        self.download_chapter_done_counts: Dict[str, int] = {}
         self.download_percent_by_id: Dict[str, int] = {}
         self.last_global_download_percent = 0
         self.download_progress_pending = set()
@@ -846,8 +869,28 @@ class MainWindow(QMainWindow):
         self.download_bytes: Dict[str, int] = {}
         self.download_speeds: Dict[str, float] = {}
         self.download_cancelled_ids = set()
+        self.download_retry_ids = set()
         self.history_card_by_index: Dict[int, QFrame] = {}
         self.selected_history_index = -1
+        self.history_visible_records: List[tuple[int, Dict[str, str]]] = []
+        self.history_render_limit = 50
+        self.history_render_batch = 50
+        self.history_drag_index = -1
+        self.history_drag_record: Optional[Dict[str, str]] = None
+        self.history_drag_start_pos = None
+        self.history_dragging = False
+        self.history_drag_card: Optional[QWidget] = None
+        self.history_drag_ghost: Optional[QLabel] = None
+        self.history_drag_opacity: Optional[QGraphicsOpacityEffect] = None
+        self.history_drop_placeholder: Optional[QFrame] = None
+        self.history_drop_index = -1
+        self.history_drag_last_move_at = 0.0
+        self.history_render_generation = 0
+        self.history_cover_queue: List[tuple[int, Dict[str, str], QLabel]] = []
+        self.history_cover_timer = QTimer(self)
+        self.history_cover_timer.setSingleShot(True)
+        self.history_cover_timer.timeout.connect(self.flush_history_cover_queue)
+        self.history_refresh_key = None
         self.current_download_album_id = ""
         self.current_album_id = ""
         self.session_username = ""
@@ -867,6 +910,9 @@ class MainWindow(QMainWindow):
         self.log_flush_timer = QTimer(self)
         self.log_flush_timer.setSingleShot(True)
         self.log_flush_timer.timeout.connect(self.flush_logs)
+        self.history_save_timer = QTimer(self)
+        self.history_save_timer.setSingleShot(True)
+        self.history_save_timer.timeout.connect(self.save_local_cache)
         self.pending_log_messages: List[str] = []
         self.loading_tick = 0
         self.page_animation: Optional[QPropertyAnimation] = None
@@ -879,6 +925,12 @@ class MainWindow(QMainWindow):
         self.active_category = ""
         self.cache_restore_worker: Optional[CacheRestoreWorker] = None
         self.cache_restore_miss_keys = set()
+        self._closing_app = False
+        self._allow_final_close = False
+        self._tray_quit_requested = False
+        self._tray_notice_shown = False
+        self.tray_icon: Optional[QSystemTrayIcon] = None
+        self._close_wait_ticks = 0
         self.db_write_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="comic18-db")
         self.async_log.connect(self.log)
         self.load_local_cache()
@@ -896,9 +948,49 @@ class MainWindow(QMainWindow):
             | Qt.WindowMaximizeButtonHint
             | Qt.WindowCloseButtonHint
         )
+        self.setup_tray_icon(icon)
         self._apply_style()
         self.setup_shortcuts()
         self._center_window()
+
+    def setup_tray_icon(self, icon: QIcon) -> None:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+
+        tray = QSystemTrayIcon(icon, self)
+        tray.setToolTip(APP_DISPLAY_NAME)
+
+        menu = QMenu(self)
+        show_action = QAction("显示主窗口", self)
+        show_action.triggered.connect(self.show_from_tray)
+        quit_action = QAction("退出", self)
+        quit_action.triggered.connect(self.quit_from_tray)
+        menu.addAction(show_action)
+        menu.addSeparator()
+        menu.addAction(quit_action)
+
+        tray.setContextMenu(menu)
+        tray.activated.connect(self.on_tray_activated)
+        tray.show()
+        self.tray_icon = tray
+
+    def on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            self.show_from_tray()
+
+    def show_from_tray(self) -> None:
+        self.show()
+        if self.isMinimized():
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def quit_from_tray(self) -> None:
+        self._tray_quit_requested = True
+        app = QApplication.instance()
+        if app is not None:
+            app.setQuitOnLastWindowClosed(True)
+        self.close()
 
     def _apply_style(self):
         self.setStyleSheet(
@@ -1074,23 +1166,23 @@ class MainWindow(QMainWindow):
             }}
             QPushButton#navButton {{
                 border: none;
-                border-radius: 8px;
-                padding: 0 18px;
-                min-height: 54px;
+                border-radius: 12px;
+                padding: 0 10px;
+                min-height: 50px;
                 text-align: left;
                 background: transparent;
-                color: #5b6b82;
+                color: #6b7280;
                 font-weight: 700;
-                font-size: 16px;
-                icon-size: 20px 20px;
+                font-size: 14px;
+                icon-size: 24px 24px;
             }}
             QPushButton#navButton:hover {{
-                background: #eef4fb;
-                color: #1d4ed8;
+                background: #f8fafc;
+                color: #ff5f97;
             }}
             QPushButton#navButton:checked {{
-                background: #2563eb;
-                color: white;
+                background: #fff1f6;
+                color: #ff5f97;
             }}
             QFrame#connectionCard {{
                 background: #ffffff;
@@ -1136,6 +1228,9 @@ class MainWindow(QMainWindow):
             }}
             """
         )
+
+    def show_toast(self, message: str, duration_ms: int = 1700, parent: Optional[QWidget] = None) -> None:
+        ToastManager.show(message, duration_ms, parent)
 
     def _build_login_page(self) -> QWidget:
         page = QWidget()
@@ -1238,6 +1333,10 @@ class MainWindow(QMainWindow):
                     "cover_url": str(item.get("cover_url") or ""),
                     "format": str(item.get("format") or ""),
                     "created_at": str(item.get("created_at") or ""),
+                    "last_page": str(item.get("last_page") or ""),
+                    "last_total": str(item.get("last_total") or ""),
+                    "last_source": str(item.get("last_source") or ""),
+                    "last_read_at": str(item.get("last_read_at") or ""),
                     "outputs": [
                         str(path)
                         for path in (item.get("outputs") or [])
@@ -1646,8 +1745,8 @@ class MainWindow(QMainWindow):
         self.save_local_cache()
         self.setMinimumSize(920, 640)
         self._resize_to_available(1180, 760)
-        self._center_window()
         self.stack.setCurrentWidget(self.app_page)
+        self.showMaximized()
         self._fade_in(self.app_page, 320)
         self.set_backend_status("准备加载首页", "busy")
         QTimer.singleShot(100, self.refresh_domain_pool)
@@ -1842,27 +1941,27 @@ class MainWindow(QMainWindow):
     def _build_navigation_panel(self) -> QFrame:
         panel = QFrame()
         panel.setObjectName("panel")
-        panel.setFixedWidth(174)
+        panel.setFixedWidth(132)
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(14, 16, 14, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(8, 12, 8, 10)
+        layout.setSpacing(8)
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         self.nav_buttons = {}
         items = [
-            ("首页", self.home_page_index(), self.switch_page, QStyle.SP_DirHomeIcon),
-            ("下载", self.downloading_page_index(), self.switch_page, QStyle.SP_ArrowDown),
-            ("历史", self.history_page_index(), self.switch_page, QStyle.SP_FileDialogDetailedView),
-            ("设置", self.settings_page_index(), self.switch_page, QStyle.SP_FileDialogContentsView),
-            ("关于", self.about_page_index(), self.switch_page, QStyle.SP_MessageBoxInformation),
+            ("首页", self.home_page_index(), self.switch_page, "home"),
+            ("下载", self.downloading_page_index(), self.switch_page, "download"),
+            ("历史", self.history_page_index(), self.switch_page, "history"),
+            ("设置", self.settings_page_index(), self.switch_page, "settings"),
+            ("关于", self.about_page_index(), self.switch_page, "about"),
         ]
-        for text, index, callback, icon_role in items:
+        for text, index, callback, icon_name in items:
             button = QPushButton(text)
             button.setObjectName("navButton")
             button.setCheckable(True)
             button.setCursor(Qt.PointingHandCursor)
-            button.setIcon(self.style().standardIcon(icon_role))
-            button.setIconSize(QSize(20, 20))
+            button.setIcon(nav_icon(icon_name))
+            button.setIconSize(QSize(24, 24))
             button.clicked.connect(lambda checked=False, index=index, callback=callback: callback(index))
             self.nav_group.addButton(button)
             self.nav_buttons[index] = button
@@ -1872,7 +1971,7 @@ class MainWindow(QMainWindow):
         status_card = QFrame()
         status_card.setObjectName("connectionCard")
         status_layout = QVBoxLayout(status_card)
-        status_layout.setContentsMargins(14, 12, 14, 12)
+        status_layout.setContentsMargins(8, 10, 8, 10)
         status_layout.setSpacing(4)
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
@@ -2526,8 +2625,10 @@ class MainWindow(QMainWindow):
         queue_layout.addLayout(queue_header)
         self.queue_scroll = QScrollArea()
         self.queue_scroll.setWidgetResizable(True)
+        self.queue_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.queue_scroll.setFrameShape(QFrame.NoFrame)
         self.queue_cards_widget = QWidget()
+        self.queue_cards_widget.setMinimumWidth(0)
         self.queue_cards_layout = QVBoxLayout(self.queue_cards_widget)
         self.queue_cards_layout.setContentsMargins(0, 0, 0, 0)
         self.queue_cards_layout.setSpacing(6)
@@ -2558,6 +2659,8 @@ class MainWindow(QMainWindow):
         self.log_box = QPlainTextEdit()
         self.log_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.log_box.setReadOnly(True)
+        self.log_box.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+        self.log_box.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.log_box.setPlaceholderText("暂无日志")
         log_layout.addWidget(self.log_box, 1)
         content.addWidget(queue_area, 3)
@@ -2589,6 +2692,12 @@ class MainWindow(QMainWindow):
         self.history_read_mode_combo = QComboBox()
         self.history_read_mode_combo.addItems(["自动", "PDF", "原文件"])
         self.history_read_mode_combo.setFixedWidth(96)
+        filter_label = QLabel("显示格式")
+        filter_label.setStyleSheet("color:#64748b;font-size:12px;font-weight:700;")
+        self.history_format_filter_combo = QComboBox()
+        self.history_format_filter_combo.addItems(["全部", "图片", "PDF", "ZIP"])
+        self.history_format_filter_combo.setFixedWidth(88)
+        self.history_format_filter_combo.currentIndexChanged.connect(self.refresh_history_table)
         read_btn = QPushButton("阅读选中")
         read_btn.setObjectName("primaryButton")
         read_btn.clicked.connect(self.open_selected_history_reading)
@@ -2600,6 +2709,8 @@ class MainWindow(QMainWindow):
         clear_btn.clicked.connect(self.clear_download_history)
         header.addWidget(title)
         header.addStretch()
+        header.addWidget(filter_label)
+        header.addWidget(self.history_format_filter_combo)
         header.addWidget(mode_label)
         header.addWidget(self.history_read_mode_combo)
         header.addWidget(open_dir_btn)
@@ -2610,8 +2721,11 @@ class MainWindow(QMainWindow):
 
         self.history_scroll = QScrollArea()
         self.history_scroll.setWidgetResizable(True)
+        self.history_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.history_scroll.setFrameShape(QFrame.NoFrame)
+        self.history_scroll.verticalScrollBar().valueChanged.connect(self.on_history_scroll_value_changed)
         self.history_cards_widget = QWidget()
+        self.history_cards_widget.setMinimumWidth(0)
         self.history_cards_layout = QVBoxLayout(self.history_cards_widget)
         self.history_cards_layout.setContentsMargins(0, 0, 0, 0)
         self.history_cards_layout.setSpacing(8)
@@ -2624,7 +2738,14 @@ class MainWindow(QMainWindow):
     def refresh_history_table(self):
         if not hasattr(self, "history_cards_layout"):
             return
-        self.sync_history_with_local_files()
+        self.cleanup_history_drag_artifacts()
+        refresh_key = self.current_history_refresh_key()
+        if refresh_key == self.history_refresh_key and self.history_cards_layout.count() > 1:
+            return
+        self.history_refresh_key = refresh_key
+        self.history_render_generation += 1
+        self.history_cover_queue.clear()
+        self.history_cover_timer.stop()
         self.history_card_by_index.clear()
         while self.history_cards_layout.count() > 1:
             item = self.history_cards_layout.takeAt(0)
@@ -2635,19 +2756,103 @@ class MainWindow(QMainWindow):
             max(self.selected_history_index, -1),
             len(self.download_history) - 1,
         )
-        for index, record in enumerate(reversed(self.download_history)):
-            source_index = len(self.download_history) - 1 - index
-            card = self.create_history_card(record, source_index)
-            self.history_card_by_index[source_index] = card
-            self.history_cards_layout.insertWidget(max(0, self.history_cards_layout.count() - 1), card)
-        if not self.download_history:
+        visible_records = [
+            (source_index, record)
+            for source_index, record in enumerate(self.download_history)
+            if self.history_record_matches_format_filter(record)
+        ]
+        visible_indexes = {source_index for source_index, _ in visible_records}
+        if self.selected_history_index not in visible_indexes:
+            self.selected_history_index = -1
+        self.history_visible_records = list(reversed(visible_records))
+        self.history_render_limit = min(self.history_render_batch, len(self.history_visible_records) or self.history_render_batch)
+        self.render_history_cards(reset_scroll=True)
+        if not self.history_visible_records:
             empty = self.create_history_card({"title": "暂无历史下载记录", "file": "下载完成后会显示在这里", "path": ""}, -1)
             self.history_cards_layout.insertWidget(0, empty)
+
+    def current_history_refresh_key(self):
+        combo = getattr(self, "history_format_filter_combo", None)
+        selected = combo.currentText() if combo else "全部"
+        records_key = tuple(
+            (
+                record.get("album_id") or record.get("id") or "",
+                record.get("path") or "",
+                record.get("pdf_path") or "",
+                record.get("image_dir") or "",
+                record.get("format") or "",
+                record.get("last_page") or "",
+                record.get("last_total") or "",
+            )
+            for record in self.download_history
+        )
+        return selected, records_key
+
+    def render_history_cards(self, reset_scroll: bool = False):
+        if not hasattr(self, "history_cards_layout"):
+            return
+        self.cleanup_history_drag_artifacts()
+        self.history_render_generation += 1
+        self.history_cover_queue.clear()
+        self.history_cover_timer.stop()
+        self.history_card_by_index.clear()
+        while self.history_cards_layout.count() > 1:
+            item = self.history_cards_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        self.append_history_cards(0, self.history_render_limit)
+        if reset_scroll:
+            QTimer.singleShot(0, lambda: self.history_scroll.verticalScrollBar().setValue(0))
+
+    def append_history_cards(self, start: int, end: int):
+        if not hasattr(self, "history_cards_layout"):
+            return
+        insert_at = max(0, self.history_cards_layout.count() - 1)
+        for source_index, record in self.history_visible_records[start:end]:
+            if source_index in self.history_card_by_index:
+                continue
+            card = self.create_history_card(record, source_index)
+            self.history_card_by_index[source_index] = card
+            self.history_cards_layout.insertWidget(insert_at, card)
+            insert_at += 1
+
+    def on_history_scroll_value_changed(self, value: int):
+        if not getattr(self, "history_visible_records", None):
+            return
+        bar = self.history_scroll.verticalScrollBar()
+        if value < bar.maximum() - 36:
+            return
+        if self.history_render_limit >= len(self.history_visible_records):
+            return
+        old_limit = self.history_render_limit
+        self.history_render_limit = min(len(self.history_visible_records), self.history_render_limit + self.history_render_batch)
+        self.append_history_cards(old_limit, self.history_render_limit)
+
+    def history_record_matches_format_filter(self, record: Dict[str, str]) -> bool:
+        combo = getattr(self, "history_format_filter_combo", None)
+        selected = combo.currentText() if combo else "全部"
+        if selected == "全部":
+            return True
+        fmt = (record.get("format") or "").lower()
+        path_texts = [record.get("path") or "", record.get("pdf_path") or "", record.get("image_dir") or ""]
+        outputs = record.get("outputs") or []
+        if isinstance(outputs, list):
+            path_texts.extend(str(value) for value in outputs)
+        suffixes = {Path(text).suffix.lower().lstrip(".") for text in path_texts if str(text).strip()}
+        if selected == "PDF":
+            return fmt == "pdf" or "pdf" in suffixes
+        if selected == "ZIP":
+            return fmt == "zip" or "zip" in suffixes
+        if selected == "图片":
+            return fmt in {"images", "image"} or bool(record.get("image_dir")) or any(suffix in {item.lstrip(".") for item in IMAGE_SUFFIXES} for suffix in suffixes)
+        return True
 
     def create_history_card(self, record: Dict[str, str], index: int) -> QFrame:
         card = QFrame()
         card.setObjectName("historyCard")
         card.setProperty("selected", index == self.selected_history_index)
+        card.setProperty("history_index", index)
         card.setMinimumHeight(116)
         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         card.setStyleSheet(self.history_card_style(index == self.selected_history_index))
@@ -2660,16 +2865,19 @@ class MainWindow(QMainWindow):
         cover._persistent_cover = True
         cover.setFixedSize(82, 98)
         cover.setAlignment(Qt.AlignCenter)
+        cover.setText("封面")
         outer.addWidget(cover)
-        self.apply_history_cover(record, cover)
+        self.queue_history_cover(record, cover)
 
         info = QVBoxLayout()
         info.setContentsMargins(0, 0, 0, 0)
         info.setSpacing(6)
         title_text = record.get("title") or Path(record.get("path", "")).stem or "未命名漫画"
-        title_label = QLabel(QFontMetrics(self.font()).elidedText(title_text, Qt.ElideRight, 520))
+        title_label = QLabel(QFontMetrics(self.font()).elidedText(title_text, Qt.ElideRight, 440))
         title_label.setObjectName("historyTitle")
         title_label.setToolTip(title_text)
+        title_label.setMinimumWidth(0)
+        title_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         info.addWidget(title_label)
 
         file_text = record.get("file") or Path(record.get("path", "")).name or "-"
@@ -2681,29 +2889,54 @@ class MainWindow(QMainWindow):
         if isinstance(outputs, list) and len(outputs) > 1:
             meta_items.append(f"{len(outputs)} 个文件")
         album_id = record.get("album_id") or record.get("id") or ""
-        if album_id:
-            meta_items.append(f"ID {album_id}")
-        meta_label = QLabel("  ·  ".join(meta_items))
+        last_page = self.history_record_last_page(record)
+        if last_page:
+            meta_items.append(f"看到第 {last_page} 页")
+        meta_text = "  ·  ".join(meta_items)
+        meta_label = QLabel(QFontMetrics(self.font()).elidedText(meta_text, Qt.ElideRight, 520))
         meta_label.setObjectName("historyMeta")
-        meta_label.setToolTip("  ·  ".join(meta_items))
-        info.addWidget(meta_label)
+        meta_label.setToolTip(meta_text)
+        meta_label.setMinimumWidth(0)
+        meta_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # Hide the low-priority gray metadata line in history cards.
+
+        fixed_items = []
+        if album_id:
+            fixed_items.append(f"ID {album_id}")
+        if last_page:
+            fixed_items.append(f"看到第 {last_page} 页")
+        if fixed_items:
+            fixed_text = "  ·  ".join(fixed_items)
+            fixed_label = QLabel(fixed_text)
+            fixed_label.setObjectName("historyFixedMeta")
+            fixed_label.setToolTip(fixed_text)
+            fixed_label.setMinimumWidth(0)
+            fixed_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            fixed_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            info.addWidget(fixed_label)
 
         path_text = record.get("path", "") or record.get("pdf_path", "") or record.get("image_dir", "")
-        path_label = QLabel(QFontMetrics(self.font()).elidedText(path_text, Qt.ElideMiddle, 620))
+        path_label = QLabel(QFontMetrics(self.font()).elidedText(path_text, Qt.ElideMiddle, 520))
         path_label.setObjectName("historyPath")
         path_label.setToolTip(path_text)
-        info.addWidget(path_label)
+        path_label.setMinimumWidth(0)
+        path_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # Hide the low-priority gray path line in history cards.
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
         read = QPushButton("阅读")
         read.setObjectName("historyAction")
+        read.setFixedWidth(58)
         read.clicked.connect(lambda checked=False, idx=index: self.select_history_record(idx, open_reader=True))
         locate = QPushButton("位置")
         locate.setObjectName("historyAction")
+        locate.setFixedWidth(58)
         locate.clicked.connect(lambda checked=False, idx=index: self.select_history_record(idx, open_location=True))
         status = QLabel("已完成" if index >= 0 else "空")
         status.setObjectName("historyBadge")
+        status.setFixedWidth(58)
+        status.setAlignment(Qt.AlignCenter)
         actions.addWidget(status)
         actions.addStretch()
         actions.addWidget(locate)
@@ -2712,9 +2945,37 @@ class MainWindow(QMainWindow):
         outer.addLayout(info, 1)
 
         if index >= 0:
-            card.mousePressEvent = lambda event, idx=index: self.handle_history_card_mouse_press(event, idx)
+            card.setCursor(Qt.PointingHandCursor)
+            card.mousePressEvent = lambda event, idx=index, widget=card: self.handle_history_card_mouse_press(event, idx, widget)
+            card.mouseMoveEvent = lambda event, idx=index, widget=card: self.handle_history_card_mouse_move(event, idx, widget)
+            card.mouseReleaseEvent = lambda event, idx=index, widget=card: self.handle_history_card_mouse_release(event, idx, widget)
             card.mouseDoubleClickEvent = lambda event, idx=index: self.select_history_record(idx, open_reader=True)
         return card
+
+    def queue_history_cover(self, record: Dict[str, str], label: QLabel):
+        generation = self.history_render_generation
+        label._history_generation = generation
+        album_id = record.get("album_id") or record.get("id") or ""
+        if album_id:
+            label._album_id = album_id
+        self.history_cover_queue.append((generation, record, label))
+        if not self.history_cover_timer.isActive():
+            self.history_cover_timer.start(20)
+
+    def flush_history_cover_queue(self):
+        generation = self.history_render_generation
+        processed = 0
+        while self.history_cover_queue and processed < 4:
+            item_generation, record, label = self.history_cover_queue.pop(0)
+            if item_generation != generation or getattr(label, "_history_generation", None) != generation:
+                continue
+            try:
+                self.apply_history_cover(record, label)
+            except RuntimeError:
+                pass
+            processed += 1
+        if self.history_cover_queue:
+            self.history_cover_timer.start(35)
 
     def history_card_style(self, selected: bool = False) -> str:
         border = "#2f80ed" if selected else "#dfe7f2"
@@ -2740,6 +3001,11 @@ class MainWindow(QMainWindow):
                 color:#64748b;
                 font-size:12px;
             }}
+            QLabel#historyFixedMeta {{
+                color:#1d4ed8;
+                font-size:12px;
+                font-weight:800;
+            }}
             QLabel#historyBadge {{
                 background:#eaf7ef;
                 color:#16794c;
@@ -2758,6 +3024,12 @@ class MainWindow(QMainWindow):
     def apply_history_cover(self, record: Dict[str, str], label: QLabel):
         album_id = record.get("album_id") or record.get("id") or ""
         cover_url = record.get("cover_url") or ""
+        label._history_record = copy.deepcopy(record)
+        if self.set_history_local_cover(record, label):
+            return
+        if album_id and album_id in self.cover_cache:
+            self.set_cover_on_label(label, self.cover_cache[album_id])
+            return
         if album_id:
             album = self.detail_cache.get(album_id) or self.albums.get(album_id)
             if album:
@@ -2776,17 +3048,55 @@ class MainWindow(QMainWindow):
                 return
         label.setText("本地")
 
+    def set_history_local_cover(self, record: Dict[str, str], label: QLabel) -> bool:
+        local_cover = self.find_history_local_cover(record)
+        if not local_cover:
+            return False
+        pixmap = self.load_local_cover_pixmap(local_cover)
+        if pixmap.isNull():
+            return False
+        album_id = record.get("album_id") or record.get("id") or ""
+        if album_id:
+            self.cover_cache[album_id] = pixmap
+        self.stop_label_movie(label)
+        self.set_cover_on_label(label, pixmap)
+        return True
+
+    @staticmethod
+    def load_local_cover_pixmap(path: Path) -> QPixmap:
+        reader = QImageReader(str(path))
+        reader.setAutoTransform(True)
+        image = reader.read()
+        if not image.isNull():
+            return QPixmap.fromImage(image)
+        return QPixmap(str(path))
+
     def find_history_local_cover(self, record: Dict[str, str]) -> Optional[Path]:
-        path_text = record.get("image_dir", "") or record.get("path", "")
-        if not path_text:
-            return None
-        path = Path(path_text).expanduser()
-        image_dir = self.resolve_history_image_dir(path)
-        if image_dir:
-            images = self.collect_local_reader_images(image_dir)
-            return images[0] if images else None
-        if path.suffix.lower() in IMAGE_SUFFIXES and path.exists():
-            return path
+        paths: List[Path] = []
+        for key in ("cover_path", "local_cover", "thumbnail", "image_dir", "path", "pdf_path"):
+            value = record.get(key)
+            if value:
+                paths.append(Path(str(value)).expanduser())
+        outputs = record.get("outputs") or []
+        if isinstance(outputs, list):
+            for value in outputs:
+                if value:
+                    paths.append(Path(str(value)).expanduser())
+
+        candidates: List[Path] = []
+        for path in paths:
+            if path.suffix.lower() in IMAGE_SUFFIXES and path.exists():
+                return path
+            if path.is_dir():
+                candidates.append(path)
+            elif path.suffix.lower() == ".pdf":
+                candidates.append(path.with_suffix(""))
+        for directory in candidates:
+            if not directory.exists() or not directory.is_dir():
+                continue
+            images = collect_images(directory) or collect_images_recursive(directory)
+            if images:
+                return images[0]
         return None
 
     def select_history_record(self, index: int, open_reader: bool = False, open_location: bool = False):
@@ -2803,7 +3113,7 @@ class MainWindow(QMainWindow):
         elif open_location:
             self.open_selected_history_location()
 
-    def handle_history_card_mouse_press(self, event, index: int):
+    def handle_history_card_mouse_press(self, event, index: int, card: Optional[QWidget] = None):
         if index < 0 or index >= len(self.download_history):
             return
         if event.button() == Qt.RightButton:
@@ -2812,6 +3122,304 @@ class MainWindow(QMainWindow):
             return
         if event.button() == Qt.LeftButton:
             self.select_history_record(index)
+            self.history_drag_index = index
+            self.history_drag_record = self.download_history[index]
+            self.history_drag_start_pos = event.globalPos()
+            self.history_drag_card = card
+            self.history_dragging = False
+
+    def handle_history_card_mouse_move(self, event, index: int, card: Optional[QWidget] = None):
+        if self.history_drag_index < 0 or self.history_drag_record is None or self.history_drag_start_pos is None:
+            return
+        combo = getattr(self, "history_format_filter_combo", None)
+        if combo and combo.currentText() != "全部":
+            return
+        if not self.history_dragging:
+            delta = event.globalPos() - self.history_drag_start_pos
+            if delta.manhattanLength() < 10:
+                return
+            self.start_history_drag(card)
+        self.update_history_drag_ghost(event.globalPos())
+        self.autoscroll_history_drag(event.globalPos())
+
+    def handle_history_card_mouse_release(self, event, index: int, card: Optional[QWidget] = None):
+        self.complete_history_drag(commit=True)
+        return
+        if self.history_dragging:
+            new_display_order = self.history_display_order_from_placeholder()
+            current_display_order = [idx for idx, _ in self.history_visible_records]
+            self.finish_history_drag()
+            if new_display_order and new_display_order != current_display_order:
+                self.apply_history_display_order(new_display_order)
+                self.save_local_cache()
+                self.show_toast("历史顺序已保存")
+        self.history_drag_index = -1
+        self.history_drag_record = None
+        self.history_drag_start_pos = None
+        self.history_dragging = False
+        self.history_drag_card = None
+
+    def start_history_drag(self, card: Optional[QWidget]):
+        if card is None:
+            return
+        self.cleanup_history_drag_artifacts()
+        self.history_dragging = True
+        self.history_drag_card = card
+        self.history_drag_last_move_at = 0.0
+        card_pixmap = card.grab()
+        placeholder = self.create_history_drop_placeholder(card.height())
+        insert_at = self.history_layout_index_of(card)
+        self.history_cards_layout.insertWidget(max(0, insert_at), placeholder)
+        card.hide()
+        self.history_drop_placeholder = placeholder
+        self.history_drop_index = max(0, insert_at)
+
+        viewport = self.history_scroll.viewport() if hasattr(self, "history_scroll") else self
+        ghost = QLabel(viewport)
+        ghost.setObjectName("historyDragGhost")
+        ghost.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        ghost_width = min(card.width(), max(260, viewport.width() - 18))
+        ghost_height = card.height()
+        ghost.setPixmap(card_pixmap.scaled(ghost_width, ghost_height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation))
+        ghost.setFixedSize(ghost_width, ghost_height)
+        ghost.setScaledContents(True)
+        ghost.setStyleSheet("border:1px solid #93c5fd;border-radius:14px;background:rgba(255,255,255,226);")
+        effect = QGraphicsOpacityEffect(ghost)
+        effect.setOpacity(0.88)
+        ghost.setGraphicsEffect(effect)
+        ghost.show()
+        ghost.raise_()
+        self.history_drag_ghost = ghost
+
+    def create_history_drop_placeholder(self, height: int) -> QFrame:
+        placeholder = QFrame()
+        placeholder.setObjectName("historyDropPlaceholder")
+        placeholder.setMinimumHeight(max(86, height))
+        placeholder.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        placeholder.setStyleSheet(
+            """
+            QFrame#historyDropPlaceholder {
+                background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 rgba(219,234,254,120), stop:1 rgba(191,219,254,70));
+                border:2px dashed rgba(96,165,250,170);
+                border-radius:28px;
+            }
+            """
+        )
+        effect = QGraphicsOpacityEffect(placeholder)
+        effect.setOpacity(0.72)
+        placeholder.setGraphicsEffect(effect)
+        return placeholder
+
+    def update_history_drag_ghost(self, global_pos):
+        ghost = self.history_drag_ghost
+        if ghost is None:
+            return
+        now = time.monotonic()
+        if now - self.history_drag_last_move_at < 0.012:
+            return
+        self.history_drag_last_move_at = now
+        viewport = self.history_scroll.viewport() if hasattr(self, "history_scroll") else self
+        local_pos = viewport.mapFromGlobal(global_pos)
+        if (
+            local_pos.x() < -90
+            or local_pos.x() > viewport.width() + 90
+            or local_pos.y() < -140
+            or local_pos.y() > viewport.height() + 140
+        ):
+            self.complete_history_drag(commit=False)
+            return
+        x = local_pos.x() - ghost.width() // 2
+        y = local_pos.y() - ghost.height() // 2
+        x = max(6, min(x, max(6, viewport.width() - ghost.width() - 6)))
+        y = max(6, min(y, max(6, viewport.height() - ghost.height() - 6)))
+        ghost.move(x, y)
+        ghost.raise_()
+        self.move_history_drop_placeholder(global_pos.y())
+
+    def autoscroll_history_drag(self, global_pos):
+        if not hasattr(self, "history_scroll"):
+            return
+        viewport = self.history_scroll.viewport()
+        local = viewport.mapFromGlobal(global_pos)
+        bar = self.history_scroll.verticalScrollBar()
+        margin = 42
+        if local.y() < margin:
+            bar.setValue(max(bar.minimum(), bar.value() - 10))
+        elif local.y() > viewport.height() - margin:
+            bar.setValue(min(bar.maximum(), bar.value() + 10))
+
+    def finish_history_drag(self):
+        if self.history_drop_placeholder is not None:
+            self.history_cards_layout.removeWidget(self.history_drop_placeholder)
+            self.history_drop_placeholder.deleteLater()
+        if self.history_drag_card is not None:
+            self.history_drag_card.setGraphicsEffect(None)
+            self.history_drag_card.show()
+        if self.history_drag_ghost is not None:
+            self.history_drag_ghost.hide()
+            self.history_drag_ghost.deleteLater()
+        self.history_drag_ghost = None
+        self.history_drag_opacity = None
+        self.history_drop_placeholder = None
+        self.history_drop_index = -1
+
+    def complete_history_drag(self, commit: bool = True):
+        if not self.history_dragging:
+            self.reset_history_drag_state()
+            return
+        new_display_order = self.history_display_order_from_placeholder() if commit else []
+        current_display_order = [idx for idx, _ in self.history_visible_records]
+        self.finish_history_drag()
+        if commit and new_display_order and new_display_order != current_display_order:
+            self.apply_history_display_order(new_display_order)
+            self.save_local_cache()
+            self.show_toast("\u5386\u53f2\u987a\u5e8f\u5df2\u4fdd\u5b58")
+        self.reset_history_drag_state()
+        self.cleanup_history_drag_artifacts()
+
+    def reset_history_drag_state(self):
+        self.history_drag_index = -1
+        self.history_drag_record = None
+        self.history_drag_start_pos = None
+        self.history_dragging = False
+        self.history_drag_card = None
+        self.history_drag_last_move_at = 0.0
+
+    def cleanup_history_drag_artifacts(self):
+        if self.history_drag_card is not None:
+            self.history_drag_card.setGraphicsEffect(None)
+            self.history_drag_card.show()
+        if self.history_drag_ghost is not None:
+            self.history_drag_ghost.hide()
+            self.history_drag_ghost.deleteLater()
+            self.history_drag_ghost = None
+        if hasattr(self, "history_scroll"):
+            for ghost in self.history_scroll.viewport().findChildren(QLabel, "historyDragGhost"):
+                ghost.hide()
+                ghost.deleteLater()
+        if hasattr(self, "history_cards_layout"):
+            for layout_index in range(self.history_cards_layout.count() - 1, -1, -1):
+                item = self.history_cards_layout.itemAt(layout_index)
+                widget = item.widget() if item else None
+                if widget is not None and widget.objectName() == "historyDropPlaceholder":
+                    self.history_cards_layout.removeWidget(widget)
+                    widget.deleteLater()
+        self.history_drop_placeholder = None
+        self.history_drop_index = -1
+
+    def history_layout_index_of(self, widget: QWidget) -> int:
+        for index in range(self.history_cards_layout.count()):
+            item = self.history_cards_layout.itemAt(index)
+            if item and item.widget() is widget:
+                return index
+        return max(0, self.history_cards_layout.count() - 1)
+
+    def move_history_drop_placeholder(self, global_y: int):
+        placeholder = self.history_drop_placeholder
+        if placeholder is None:
+            return
+        target_index = max(0, self.history_cards_layout.count() - 1)
+        for layout_index in range(self.history_cards_layout.count()):
+            item = self.history_cards_layout.itemAt(layout_index)
+            widget = item.widget() if item else None
+            if widget is None or widget is placeholder or widget is self.history_drag_card:
+                continue
+            center_y = widget.mapToGlobal(widget.rect().center()).y()
+            if global_y <= center_y:
+                target_index = layout_index
+                break
+        current_index = self.history_layout_index_of(placeholder)
+        if target_index > current_index:
+            target_index -= 1
+        target_index = max(0, min(target_index, max(0, self.history_cards_layout.count() - 2)))
+        if target_index == current_index or target_index == self.history_drop_index:
+            return
+        self.history_cards_layout.removeWidget(placeholder)
+        self.history_cards_layout.insertWidget(max(0, target_index), placeholder)
+        self.history_drop_index = target_index
+
+    def history_display_order_from_placeholder(self) -> List[int]:
+        source_index = self.history_drag_index
+        if source_index < 0 or self.history_drop_placeholder is None:
+            return []
+        display_without_source = [idx for idx, _ in self.history_visible_records if idx != source_index]
+        before_count = 0
+        marker_seen = False
+        for layout_index in range(self.history_cards_layout.count()):
+            item = self.history_cards_layout.itemAt(layout_index)
+            widget = item.widget() if item else None
+            if widget is None:
+                continue
+            if widget is self.history_drop_placeholder:
+                marker_seen = True
+                break
+            if widget is self.history_drag_card:
+                continue
+            idx = widget.property("history_index")
+            if isinstance(idx, int) and idx in display_without_source:
+                before_count += 1
+        if not marker_seen:
+            before_count = len([idx for idx in display_without_source if idx in [item[0] for item in self.history_visible_records[: self.history_render_limit]]])
+        before_count = max(0, min(before_count, len(display_without_source)))
+        display_without_source.insert(before_count, source_index)
+        return display_without_source
+
+    def apply_history_display_order(self, display_indexes: List[int]):
+        if not display_indexes:
+            return
+        old_records = self.download_history
+        if set(display_indexes) != set(range(len(old_records))):
+            remaining = [idx for idx, _ in self.history_visible_records if idx not in display_indexes]
+            display_indexes = display_indexes + remaining
+        self.download_history = [old_records[idx] for idx in reversed(display_indexes)]
+        for order, record in enumerate(self.download_history):
+            record["sort_order"] = str(order)
+        if self.history_drag_record in self.download_history:
+            self.history_drag_index = self.download_history.index(self.history_drag_record)
+            self.selected_history_index = self.history_drag_index
+        current_scroll = self.history_scroll.verticalScrollBar().value() if hasattr(self, "history_scroll") else 0
+        self.history_visible_records = list(reversed(list(enumerate(self.download_history))))
+        self.render_history_cards(reset_scroll=False)
+        QTimer.singleShot(0, lambda value=current_scroll: self.history_scroll.verticalScrollBar().setValue(value))
+
+    def history_drop_target_index(self, global_y: int) -> int:
+        rendered_indexes = [source_index for source_index, _ in self.history_visible_records[: self.history_render_limit]]
+        if not rendered_indexes:
+            return -1
+        target_index = rendered_indexes[-1]
+        for source_index in rendered_indexes:
+            card = self.history_card_by_index.get(source_index)
+            if card is None:
+                continue
+            center_y = card.mapToGlobal(card.rect().center()).y()
+            if global_y <= center_y:
+                target_index = source_index
+                break
+        return target_index
+
+    def reorder_history_by_display_target(self, source_index: int, target_index: int):
+        if source_index < 0 or target_index < 0 or source_index >= len(self.download_history) or target_index >= len(self.download_history):
+            return
+        display_indexes = [idx for idx, _ in self.history_visible_records]
+        if source_index not in display_indexes or target_index not in display_indexes:
+            return
+        source_pos = display_indexes.index(source_index)
+        target_pos = display_indexes.index(target_index)
+        if source_pos == target_pos:
+            return
+        moved_index = display_indexes.pop(source_pos)
+        display_indexes.insert(target_pos, moved_index)
+        old_records = self.download_history
+        self.download_history = [old_records[idx] for idx in reversed(display_indexes)]
+        for order, record in enumerate(self.download_history):
+            record["sort_order"] = str(order)
+        if self.history_drag_record in self.download_history:
+            self.history_drag_index = self.download_history.index(self.history_drag_record)
+            self.selected_history_index = self.history_drag_index
+        current_scroll = self.history_scroll.verticalScrollBar().value() if hasattr(self, "history_scroll") else 0
+        self.history_visible_records = list(reversed(list(enumerate(self.download_history))))
+        self.render_history_cards(reset_scroll=False)
+        QTimer.singleShot(0, lambda value=current_scroll: self.history_scroll.verticalScrollBar().setValue(value))
 
     def show_history_context_menu(self, index: int, global_pos):
         if index < 0 or index >= len(self.download_history):
@@ -2836,17 +3444,6 @@ class MainWindow(QMainWindow):
         record = self.download_history[index]
         title = record.get("title") or record.get("file") or record.get("path") or "历史记录"
         local_paths = self.history_record_local_paths(record)
-        if confirm:
-            message = f"确定删除历史记录并删除本地漫画资源吗？\n\n{title}"
-            if local_paths:
-                message += "\n\n将删除：\n" + "\n".join(str(path) for path in local_paths[:6])
-                if len(local_paths) > 6:
-                    message += f"\n... 共 {len(local_paths)} 个路径"
-            else:
-                message += "\n\n没有找到对应的本地文件，只会删除历史记录。"
-            answer = QMessageBox.question(self, "删除本地漫画", message)
-            if answer != QMessageBox.Yes:
-                return
         self.download_history.pop(index)
         deleted, failed = self.delete_history_local_paths(local_paths)
         if self.selected_history_index == index:
@@ -2855,27 +3452,21 @@ class MainWindow(QMainWindow):
             self.selected_history_index -= 1
         if failed:
             self.log(f"历史记录已删除，本地资源部分删除失败：{title}，失败 {len(failed)} 个。")
-            QMessageBox.warning(self, "部分删除失败", "\n".join(f"{path}: {error}" for path, error in failed[:8]))
+            self.show_toast(f"历史已删除，部分本地资源删除失败：{len(failed)} 个", 2200)
         else:
             self.log(f"已删除历史记录和本地资源：{title}，删除 {deleted} 个路径。")
+            self.show_toast("历史记录已删除")
         self.refresh_history_table()
         self.save_local_cache()
 
     def delete_selected_history_record(self):
         if self.selected_history_index < 0 or self.selected_history_index >= len(self.download_history):
-            QMessageBox.information(self, "提示", "请先选择一条历史记录。")
+            self.show_toast("请先选择一条历史记录")
             return
         self.delete_history_record(self.selected_history_index)
 
     def clear_download_history(self):
         if not self.download_history:
-            return
-        answer = QMessageBox.question(
-            self,
-            "清空历史和本地漫画",
-            f"确定清空全部 {len(self.download_history)} 条历史记录，并删除这些历史对应的本地漫画资源吗？",
-        )
-        if answer != QMessageBox.Yes:
             return
         all_paths = []
         for record in self.download_history:
@@ -2886,7 +3477,9 @@ class MainWindow(QMainWindow):
         self.refresh_history_table()
         self.save_local_cache()
         if failed:
-            QMessageBox.warning(self, "部分删除失败", "\n".join(f"{path}: {error}" for path, error in failed[:8]))
+            self.show_toast(f"历史已清空，部分本地资源删除失败：{len(failed)} 个", 2200)
+        else:
+            self.show_toast("历史记录已清空")
         self.log(f"已清空历史记录并删除本地资源：删除 {deleted} 个路径，失败 {len(failed)} 个。")
 
     def sync_history_with_local_files(self):
@@ -2906,11 +3499,98 @@ class MainWindow(QMainWindow):
                 self.selected_history_index = -1
                 self.save_local_cache()
                 self.log(f"已同步历史记录：移除本地文件不存在的记录 {removed} 条。")
+            added = self.import_completed_local_resources()
+            if added:
+                self.save_local_cache()
+                self.log(f"已同步本地下载资源到历史记录：新增 {added} 条。")
         finally:
             self._syncing_history_files = False
 
+    def import_completed_local_resources(self) -> int:
+        roots = [
+            Path(self.output_edit.text()).expanduser() if hasattr(self, "output_edit") else self.default_output_dir,
+            self.default_output_dir,
+        ]
+        added = 0
+        for root in self.unique_existing_dirs(roots):
+            for path in self.iter_completed_local_outputs(root):
+                album_id = self.album_id_from_local_output(path)
+                if album_id and self.find_history_index_for_album(album_id) >= 0:
+                    continue
+                if self.find_history_index_for_output(path) >= 0:
+                    continue
+                record = self.history_record_from_local_output(path, album_id)
+                if record:
+                    self.download_history.append(record)
+                    added += 1
+        if added:
+            self.selected_history_index = len(self.download_history) - 1
+        return added
+
+    def iter_completed_local_outputs(self, root: Path) -> List[Path]:
+        if not root.exists() or not root.is_dir():
+            return []
+        outputs: List[Path] = []
+        children = []
+        for child in root.iterdir():
+            try:
+                children.append((child.stat().st_mtime, child))
+            except OSError:
+                continue
+        for _, child in sorted(children, key=lambda item: item[0], reverse=True):
+            if child.name.startswith("."):
+                continue
+            if child.is_file() and child.suffix.lower() in {".pdf", ".zip"} and self.is_completed_local_resource(child):
+                outputs.append(child)
+            elif child.is_dir() and self.is_completed_local_resource(child):
+                outputs.append(child)
+        return outputs
+
+    @staticmethod
+    def album_id_from_local_output(path: Path) -> str:
+        match = re.search(r"(?:JM)?(\d{4,})", path.stem if path.is_file() else path.name, re.IGNORECASE)
+        return match.group(1) if match else ""
+
+    def history_record_from_local_output(self, path: Path, album_id: str = "") -> Optional[Dict[str, str]]:
+        if not self.is_completed_local_resource(path):
+            return None
+        title = path.stem if path.is_file() else path.name
+        if album_id:
+            title = re.sub(rf"^JM?{re.escape(album_id)}[-_\s]*", "", title, flags=re.IGNORECASE) or title
+        image_dir = self.resolve_history_image_dir(path)
+        pdf_path = str(path) if path.is_file() and path.suffix.lower() == ".pdf" else ""
+        album = self.albums.get(album_id) or self.detail_cache.get(album_id) if album_id else None
+        return {
+            "title": album.title if album else title,
+            "file": path.name,
+            "path": str(path),
+            "pdf_path": pdf_path,
+            "image_dir": str(image_dir) if image_dir else (str(path) if path.is_dir() else ""),
+            "album_id": album_id,
+            "cover_url": album.cover_url if album else "",
+            "format": path.suffix.lstrip(".") if path.is_file() else "images",
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "sort_order": str(len(self.download_history)),
+            "outputs": [str(path)],
+        }
+
     def history_record_has_local_file(self, record: Dict[str, str]) -> bool:
-        return any(path.exists() for path in self.history_record_local_paths(record))
+        if self.resolve_history_pdf_path(record) is not None:
+            return True
+        if self.resolve_history_image_dir_from_record(record) is not None:
+            return True
+        return any(self.is_completed_local_resource(path) for path in self.history_record_local_paths(record))
+
+    def is_completed_local_resource(self, path: Path) -> bool:
+        try:
+            path = path.expanduser()
+            if path.is_dir():
+                return bool(self.collect_local_reader_images(path))
+            if not path.is_file() or path.stat().st_size <= 0:
+                return False
+            return path.suffix.lower() in {".pdf", ".zip"} | IMAGE_SUFFIXES
+        except Exception:
+            return False
 
     def history_record_local_paths(self, record: Dict[str, str]) -> List[Path]:
         candidates: List[Path] = []
@@ -2921,6 +3601,9 @@ class MainWindow(QMainWindow):
         outputs = record.get("outputs") or []
         if isinstance(outputs, list):
             candidates.extend(Path(str(value)).expanduser() for value in outputs if str(value).strip())
+        image_dir = self.resolve_history_image_dir_from_record(record)
+        if image_dir:
+            candidates.append(image_dir)
         for candidate in list(candidates):
             image_dir = self.resolve_history_image_dir(candidate)
             if image_dir:
@@ -2988,32 +3671,157 @@ class MainWindow(QMainWindow):
             return None
         return self.download_history[row]
 
+    @staticmethod
+    def history_record_last_page(record: Dict[str, str]) -> int:
+        try:
+            return max(0, int(record.get("last_page") or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def schedule_history_save(self):
+        self.history_save_timer.start(500)
+
+    def bind_reader_download_action(self, reader: HdMangaReaderWindow, album: Optional[AlbumMeta] = None):
+        if album is not None:
+            reader.album = copy.deepcopy(album)
+        reader.download_requested.connect(lambda album, source_reader=reader: self.on_reader_download_requested(album, source_reader))
+
+    def on_reader_download_requested(self, album: AlbumMeta, reader: Optional[HdMangaReaderWindow] = None):
+        if not album or not album.album_id:
+            self.show_toast("\u5f53\u524d\u6f2b\u753b\u7f3a\u5c11 ID\uff0c\u65e0\u6cd5\u52a0\u5165\u4e0b\u8f7d", parent=reader)
+            return
+        if not album or not album.album_id:
+            self.show_toast("当前漫画缺少 ID，无法加入下载")
+            return
+        if album.album_id not in self.albums:
+            self.albums[album.album_id] = copy.deepcopy(album)
+        if album.album_id not in self.detail_cache:
+            self.detail_cache[album.album_id] = copy.deepcopy(album)
+        if any(item.album_id == album.album_id for item in self.queue):
+            self.show_toast("\u6f2b\u753b\u5df2\u5b58\u5728\uff0c\u65e0\u9700\u91cd\u590d\u4e0b\u8f7d", parent=reader)
+            return
+        if any(item.album_id == album.album_id for item in self.download_pending_queue) or album.album_id in self.download_workers:
+            self.show_toast("\u6f2b\u753b\u5df2\u5728\u4e0b\u8f7d\u4e2d\uff0c\u65e0\u9700\u91cd\u590d\u4e0b\u8f7d", parent=reader)
+            return
+        if self.album_has_completed_local_resource(album):
+            self.show_toast("\u6f2b\u753b\u5df2\u5b58\u5728\uff0c\u65e0\u9700\u91cd\u590d\u4e0b\u8f7d", parent=reader)
+            return
+        if not album.chapters:
+            self.show_toast("\u5f53\u524d\u6f2b\u753b\u8fd8\u6ca1\u6709\u53ef\u4e0b\u8f7d\u7ae0\u8282", parent=reader)
+            return
+        reader_added_to_queue = self.add_album_to_queue(album.album_id, switch_page=False, toast_parent=reader)
+        if reader_added_to_queue:
+            self.show_toast("\u5df2\u52a0\u5165\u4e0b\u8f7d\u961f\u5217", parent=reader)
+        if reader_added_to_queue:
+            self.log(f"已从阅读器加入下载：{album.title}")
+
+    def on_history_reader_position_changed(self, history_index: int, page: int, total: int, source_key: str):
+        if history_index < 0 or history_index >= len(self.download_history) or page <= 0:
+            return
+        record = self.download_history[history_index]
+        if self.history_record_last_page(record) == page and self.history_record_last_total(record) == max(0, total):
+            return
+        record["last_page"] = str(page)
+        record["last_total"] = str(max(0, total))
+        record["last_source"] = source_key or ""
+        record["last_read_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.update_history_card_progress(history_index)
+        self.schedule_history_save()
+
+    def update_history_card_progress(self, history_index: int):
+        card = self.history_card_by_index.get(history_index)
+        if not card or history_index < 0 or history_index >= len(self.download_history):
+            return
+        record = self.download_history[history_index]
+        fixed_label = card.findChild(QLabel, "historyFixedMeta")
+        if fixed_label is not None:
+            text = self.history_fixed_meta_text(record)
+            fixed_label.setText(text)
+            fixed_label.setToolTip(text)
+
+    def history_fixed_meta_text(self, record: Dict[str, str]) -> str:
+        items = []
+        album_id = record.get("album_id") or record.get("id") or ""
+        if album_id:
+            items.append(f"ID {album_id}")
+        last_page = self.history_record_last_page(record)
+        if last_page:
+            items.append(f"看到第 {last_page} 页")
+        return "  ·  ".join(items)
+
+    @staticmethod
+    def history_record_last_total(record: Dict[str, str]) -> int:
+        try:
+            return max(0, int(record.get("last_total") or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def album_from_history_record(self, record: Dict[str, str]) -> Optional[AlbumMeta]:
+        album_id = str(record.get("album_id") or record.get("id") or "").strip()
+        if not album_id:
+            return None
+        album = self.albums.get(album_id) or self.detail_cache.get(album_id)
+        if album:
+            return copy.deepcopy(album)
+        return AlbumMeta(
+            album_id=album_id,
+            title=record.get("title") or record.get("file") or album_id,
+            url="",
+            cover_url=record.get("cover_url") or "",
+            source="历史",
+        )
+
     def open_selected_history_reading(self):
         record = self.selected_history_record()
         if not record:
-            QMessageBox.information(self, "提示", "请先选择一条历史记录。")
+            self.show_toast("请先选择一条历史记录")
             return
         mode = self.selected_history_read_mode()
         path_text = record.get("path", "") or record.get("pdf_path", "") or record.get("image_dir", "")
         path = Path(path_text).expanduser() if path_text else Path()
-        images, pdf_path = self.resolve_history_reader_sources_for_record(record, mode)
-        if not images and pdf_path is None:
+        image_dir = self.resolve_history_image_dir_from_record(record)
+        pdf_path = self.resolve_history_pdf_path(record)
+        direct_images: List[Path] = []
+        if path_text:
+            candidate = Path(path_text).expanduser()
+            if candidate.is_file() and candidate.suffix.lower() in IMAGE_SUFFIXES:
+                direct_images = [candidate]
+        use_images = bool(image_dir or direct_images) and mode != "pdf"
+        use_pdf = pdf_path is not None and (mode == "pdf" or not use_images)
+        if not use_images and not use_pdf:
+            if path_text and path.exists():
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+                return
             target = str(path) if path_text else "历史记录中的本地文件"
-            QMessageBox.warning(self, "文件不存在", f"找不到可阅读的本地文件：{target}")
+            self.show_toast(f"找不到可阅读的本地文件：{target}", 2200)
             return
 
-        if images or pdf_path is not None:
+        if use_images or use_pdf:
             title = record.get("title") or path.stem
+            history_index = self.selected_history_index
             dialog = HdMangaReaderWindow(f"漫画阅读 - {title}")
+            self.bind_reader_download_action(dialog, self.album_from_history_record(record))
+            dialog.mark_downloaded_action()
+            dialog.set_restore_page(self.history_record_last_page(record))
+            dialog.page_position_changed.connect(
+                lambda page, total, source, idx=history_index: self.on_history_reader_position_changed(idx, page, total, source)
+            )
             self.local_reader_dialogs.append(dialog)
             dialog.destroyed.connect(lambda _=None, dialog=dialog: self.forget_local_reader_dialog(dialog))
             try:
-                if images:
-                    dialog.start_decode_image_paths(images)
-                elif pdf_path is not None:
-                    fallback_images = self.resolve_history_reader_sources_for_record(record, "original")[0]
-                    if not dialog.start_decode_pdf(pdf_path, fallback_images):
-                        raise RuntimeError(f"PDF 解码失败：{pdf_path}")
+                if use_images:
+                    chapter_dirs = self.local_reader_chapter_dir_groups(image_dir) if image_dir else []
+                    if chapter_dirs:
+                        dialog.start_local_chapter_dirs(chapter_dirs, record.get("last_source") or "")
+                    else:
+                        dialog.start_decode_image_paths(direct_images)
+                elif use_pdf and pdf_path is not None:
+                    pdf_groups = self.local_reader_pdf_chapter_groups(record)
+                    if len(pdf_groups) > 1:
+                        dialog.start_local_pdf_chapters(pdf_groups, record.get("last_source") or "")
+                    else:
+                        if not dialog.start_decode_pdf(pdf_path, []):
+                            raise RuntimeError(f"PDF 解码失败：{pdf_path}")
                 dialog.showMaximized()
                 dialog.raise_()
                 dialog.activateWindow()
@@ -3022,10 +3830,99 @@ class MainWindow(QMainWindow):
                 self.forget_local_reader_dialog(dialog)
                 dialog.deleteLater()
                 self.log(f"本地阅读器打开失败：{exc}")
-                QMessageBox.warning(self, "阅读失败", f"本地阅读器解析失败，已改用系统打开。\n{exc}")
+                self.show_toast(f"本地阅读器解析失败，已改用系统打开：{exc}", 2400)
 
         if path_text and path.exists():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def local_reader_pdf_chapter_groups(self, record: Dict[str, str]) -> List[tuple[str, Path, str]]:
+        candidates: List[Path] = []
+        for key in ("pdf_path", "path"):
+            value = record.get(key) or ""
+            if value:
+                candidates.append(Path(value).expanduser())
+        outputs = record.get("outputs") or []
+        if isinstance(outputs, list):
+            candidates.extend(Path(str(value)).expanduser() for value in outputs if str(value).strip())
+
+        pdfs: List[Path] = []
+        seen = set()
+        for candidate in candidates:
+            if candidate.is_file() and candidate.suffix.lower() == ".pdf" and candidate.stat().st_size > 0:
+                paths = [candidate]
+            elif candidate.is_dir():
+                paths = sorted(
+                    path
+                    for path in candidate.iterdir()
+                    if path.is_file() and path.suffix.lower() == ".pdf" and path.stat().st_size > 0
+                )
+            else:
+                paths = []
+            for path in paths:
+                key = self.normalized_history_path(path)
+                if key in seen:
+                    continue
+                seen.add(key)
+                pdfs.append(path)
+
+        pdfs.sort(key=lambda path: self.local_chapter_sort_key(path.stem))
+        return [(path.stem, path, str(path)) for path in pdfs]
+
+    @staticmethod
+    def local_chapter_sort_key(text: str):
+        parts = re.split(r"(\d+)", text or "")
+        return [int(part) if part.isdigit() else part.lower() for part in parts]
+
+    def local_reader_chapter_dir_groups(self, image_dir: Optional[Path]) -> List[tuple[str, Path, str]]:
+        if image_dir is None or not image_dir.exists() or not image_dir.is_dir():
+            return []
+        if collect_images(image_dir):
+            return [(image_dir.name, image_dir, str(image_dir))]
+        child_dirs = [
+            child
+            for child in sorted(image_dir.iterdir(), key=lambda path: self.local_chapter_sort_key(path.name))
+            if child.is_dir() and not child.name.startswith(".")
+        ]
+        groups = [
+            (child.name, child, str(child))
+            for child in child_dirs
+            if self.directory_may_contain_reader_images(child)
+        ]
+        return groups or [(image_dir.name, image_dir, str(image_dir))]
+
+    @staticmethod
+    def directory_may_contain_reader_images(directory: Path) -> bool:
+        try:
+            for child in directory.iterdir():
+                if child.is_file() and child.suffix.lower() in IMAGE_SUFFIXES:
+                    return True
+            for child in directory.iterdir():
+                if not child.is_dir() or child.name.startswith("."):
+                    continue
+                for item in child.iterdir():
+                    if item.is_file() and item.suffix.lower() in IMAGE_SUFFIXES:
+                        return True
+        except OSError:
+            return False
+        return False
+
+    def local_reader_chapter_groups(self, image_dir: Optional[Path]) -> List[tuple[str, List[Path], str]]:
+        if image_dir is None or not image_dir.exists() or not image_dir.is_dir():
+            return []
+        direct_images = collect_images(image_dir)
+        child_groups: List[tuple[str, List[Path], str]] = []
+        for child in sorted(image_dir.iterdir(), key=lambda path: self.local_chapter_sort_key(path.name)):
+            if not child.is_dir() or child.name.startswith("."):
+                continue
+            images = self.collect_local_reader_images(child)
+            if images:
+                child_groups.append((child.name, images, str(child)))
+        if child_groups:
+            return child_groups
+        if direct_images:
+            return [(image_dir.name, direct_images, str(image_dir))]
+        images = self.collect_local_reader_images(image_dir)
+        return [(image_dir.name, images, str(image_dir))] if images else []
 
     def selected_history_read_mode(self) -> str:
         combo = getattr(self, "history_read_mode_combo", None)
@@ -3072,6 +3969,9 @@ class MainWindow(QMainWindow):
         return images, pdf_path
 
     def resolve_history_pdf_path(self, record: Dict[str, str]) -> Optional[Path]:
+        pdf_groups = self.local_reader_pdf_chapter_groups(record)
+        if pdf_groups:
+            return pdf_groups[0][1]
         candidates: List[Path] = []
         for key in ("pdf_path", "path"):
             value = record.get(key) or ""
@@ -3081,11 +3981,11 @@ class MainWindow(QMainWindow):
         if isinstance(outputs, list):
             candidates.extend(Path(str(value)).expanduser() for value in outputs if str(value).strip())
         for candidate in candidates:
-            if candidate.is_file() and candidate.suffix.lower() == ".pdf":
+            if candidate.is_file() and candidate.suffix.lower() == ".pdf" and candidate.stat().st_size > 0:
                 return candidate
             if candidate.is_dir():
                 _, pdf_path = collect_reader_files(candidate)
-                if pdf_path is not None:
+                if pdf_path is not None and pdf_path.stat().st_size > 0:
                     return pdf_path
         return None
 
@@ -3093,7 +3993,7 @@ class MainWindow(QMainWindow):
         image_dir = record.get("image_dir") or ""
         if image_dir:
             candidate = Path(image_dir).expanduser()
-            if candidate.exists() and self.collect_local_reader_images(candidate):
+            if candidate.exists() and candidate.is_dir() and self.directory_may_contain_reader_images(candidate):
                 return candidate
         for key in ("path", "pdf_path"):
             value = record.get(key) or ""
@@ -3108,46 +4008,144 @@ class MainWindow(QMainWindow):
                     candidate = self.resolve_history_image_dir(Path(str(value)).expanduser())
                     if candidate:
                         return candidate
+        return self.find_history_image_dir_by_record(record)
+
+    def find_history_image_dir_by_record(self, record: Dict[str, str]) -> Optional[Path]:
+        roots: List[Path] = []
+        texts = [
+            str(record.get("path") or ""),
+            str(record.get("pdf_path") or ""),
+            str(record.get("image_dir") or ""),
+        ]
+        outputs = record.get("outputs") or []
+        if isinstance(outputs, list):
+            texts.extend(str(value) for value in outputs if str(value).strip())
+
+        for text in texts:
+            if not text.strip():
+                continue
+            path = Path(text).expanduser()
+            base = path if path.is_dir() else path.parent
+            roots.extend([base, base.parent])
+        roots.extend([Path(self.output_edit.text()).expanduser() if hasattr(self, "output_edit") else self.default_output_dir, self.default_output_dir])
+
+        tokens = self.history_record_search_tokens(record)
+        for root in self.unique_existing_dirs(roots):
+            for candidate in self.matching_history_image_dirs(root, tokens):
+                return candidate
         return None
+
+    def history_record_search_tokens(self, record: Dict[str, str]) -> List[str]:
+        values = [
+            str(record.get("album_id") or record.get("id") or ""),
+            str(record.get("title") or ""),
+            Path(str(record.get("file") or "")).stem,
+            Path(str(record.get("path") or "")).stem,
+            Path(str(record.get("pdf_path") or "")).stem,
+        ]
+        tokens: List[str] = []
+        for value in values:
+            value = value.strip()
+            if not value:
+                continue
+            tokens.append(value)
+            match = re.search(r"(\d{4,})", value)
+            if match:
+                tokens.append(match.group(1))
+                tokens.append(f"JM{match.group(1)}")
+        return list(dict.fromkeys(token.lower() for token in tokens if token.strip()))
+
+    def matching_history_image_dirs(self, root: Path, tokens: List[str]) -> List[Path]:
+        if not tokens or not root.exists() or not root.is_dir():
+            return []
+        matches: List[Path] = []
+        for candidate in [root] + [child for child in root.iterdir() if child.is_dir()]:
+            name = candidate.name.lower()
+            if tokens and not any(token in name for token in tokens):
+                continue
+            if self.collect_local_reader_images(candidate):
+                matches.append(candidate)
+        return sorted(matches, key=lambda path: len(path.parts))
+
+    def album_has_completed_local_resource(self, album: AlbumMeta) -> bool:
+        history_index = self.find_history_index_for_album(album.album_id)
+        if history_index >= 0 and self.history_record_has_local_file(self.download_history[history_index]):
+            return True
+        return self.find_completed_album_output(album) is not None
+
+    def find_completed_album_output(self, album: AlbumMeta) -> Optional[Path]:
+        expected_prefix = f"JM{album.album_id}-".lower()
+        roots = [
+            Path(self.output_edit.text()).expanduser() if hasattr(self, "output_edit") else self.default_output_dir,
+            self.default_output_dir,
+        ]
+        for root in self.unique_existing_dirs(roots):
+            for candidate in sorted(root.iterdir()):
+                name = candidate.name.lower()
+                if not (name.startswith(expected_prefix) or album.album_id in name):
+                    continue
+                if self.is_completed_local_resource(candidate):
+                    return candidate
+        return None
+
+    @staticmethod
+    def unique_existing_dirs(paths: List[Path]) -> List[Path]:
+        unique: List[Path] = []
+        seen = set()
+        for path in paths:
+            if not path:
+                continue
+            try:
+                resolved = path.expanduser().resolve(strict=False)
+            except Exception:
+                resolved = path.expanduser()
+            key = str(resolved).lower()
+            if key in seen or not resolved.exists() or not resolved.is_dir():
+                continue
+            seen.add(key)
+            unique.append(resolved)
+        return unique
 
     def open_selected_history_location(self):
         record = self.selected_history_record()
         if not record:
-            QMessageBox.information(self, "提示", "请先选择一条历史记录。")
+            self.show_toast("请先选择一条历史记录")
             return
+        image_dir = self.resolve_history_image_dir_from_record(record)
+        pdf_path = self.resolve_history_pdf_path(record)
         path_text = record.get("path", "") or record.get("pdf_path", "") or record.get("image_dir", "")
-        path = Path(path_text).expanduser()
+        path = image_dir or pdf_path or (Path(path_text).expanduser() if path_text else Path())
         target = path if path.is_dir() else path.parent
         if not target.exists():
-            QMessageBox.warning(self, "路径不存在", f"找不到本地路径：{target}")
+            self.show_toast(f"找不到本地路径：{target}", 2200)
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
 
     def resolve_history_image_dir(self, path: Path) -> Optional[Path]:
         if path.is_dir():
-            return path if self.collect_local_reader_images(path) else None
+            return path if self.directory_may_contain_reader_images(path) else None
         if path.suffix.lower() in IMAGE_SUFFIXES:
             return path.parent
         if path.suffix.lower() == ".pdf":
             sibling = path.with_suffix("")
-            if sibling.exists() and sibling.is_dir() and self.collect_local_reader_images(sibling):
+            if sibling.exists() and sibling.is_dir() and self.directory_may_contain_reader_images(sibling):
                 return sibling
             if " - " in path.stem:
                 album_name, chapter_name = path.stem.split(" - ", 1)
                 album_dir = path.parent / album_name
                 chapter_dir = album_dir / chapter_name
-                if chapter_dir.exists() and self.collect_local_reader_images(chapter_dir):
+                if chapter_dir.exists() and self.directory_may_contain_reader_images(chapter_dir):
                     return chapter_dir
-                if album_dir.exists() and self.collect_local_reader_images(album_dir):
+                if album_dir.exists() and self.directory_may_contain_reader_images(album_dir):
                     return album_dir
             for candidate in sorted(path.parent.iterdir() if path.parent.exists() else []):
-                if candidate.is_dir() and candidate.name.startswith(path.stem) and self.collect_local_reader_images(candidate):
+                if candidate.is_dir() and candidate.name.startswith(path.stem) and self.directory_may_contain_reader_images(candidate):
                     return candidate
             album_id_match = re.search(r"(\d+)", path.stem)
             if album_id_match:
                 album_id = album_id_match.group(1)
                 for candidate in sorted(path.parent.iterdir() if path.parent.exists() else []):
-                    if candidate.is_dir() and album_id in candidate.name and self.collect_local_reader_images(candidate):
+                    if candidate.is_dir() and album_id in candidate.name and self.directory_may_contain_reader_images(candidate):
                         return candidate
         return None
 
@@ -3213,10 +4211,10 @@ class MainWindow(QMainWindow):
         password = self.login_pass_edit.text()
         cookie = self.login_cookie_edit.toPlainText().strip()
         if not username and not cookie:
-            QMessageBox.information(self, "提示", "请输入账号，或粘贴已登录后的 Cookie。")
+            self.show_toast("请输入账号，或粘贴已登录后的 Cookie")
             return
         if username and not password and not cookie:
-            QMessageBox.information(self, "提示", "请输入密码；如果站点要求安全验证，也请粘贴 Cookie。")
+            self.show_toast("请输入密码；如果站点要求安全验证，也请粘贴 Cookie")
             return
         self.show_login_loading(
             "正在登录...",
@@ -3224,6 +4222,18 @@ class MainWindow(QMainWindow):
         )
 
     def eventFilter(self, obj, event):
+        if getattr(self, "history_dragging", False):
+            if event.type() == QEvent.MouseMove and hasattr(event, "globalPos"):
+                self.update_history_drag_ghost(event.globalPos())
+                self.autoscroll_history_drag(event.globalPos())
+                return False
+            if event.type() == QEvent.MouseButtonRelease:
+                self.complete_history_drag(commit=True)
+                return True
+            if event.type() == QEvent.KeyPress and hasattr(event, "key") and event.key() == Qt.Key_Escape:
+                self.complete_history_drag(commit=False)
+                return True
+
         if obj not in {getattr(self, "login_header", None), getattr(self, "main_header", None)}:
             return super().eventFilter(obj, event)
 
@@ -3277,6 +4287,8 @@ class MainWindow(QMainWindow):
         self.settings_cache = self.current_settings_snapshot()
         self.save_local_cache()
         self.home_auto_loaded = False
+        if self.isMaximized():
+            self.showNormal()
         self.setMinimumSize(330, 460)
         self.resize(360, 500)
         self._center_window()
@@ -3284,10 +4296,80 @@ class MainWindow(QMainWindow):
         self._fade_in(self.login_page, 260)
 
     def closeEvent(self, event):
+        if (
+            not self._tray_quit_requested
+            and not self._allow_final_close
+            and self.tray_icon is not None
+            and self.tray_icon.isVisible()
+        ):
+            event.ignore()
+            self.settings_cache = self.current_settings_snapshot()
+            self.save_local_cache()
+            self.hide()
+            if not self._tray_notice_shown:
+                self.tray_icon.showMessage(
+                    APP_DISPLAY_NAME,
+                    "程序已隐藏到系统托盘，双击托盘图标可恢复窗口。",
+                    QSystemTrayIcon.Information,
+                    2500,
+                )
+                self._tray_notice_shown = True
+            return
+
+        if self._allow_final_close or not self.has_running_background_tasks():
+            self.settings_cache = self.current_settings_snapshot()
+            self.save_local_cache()
+            super().closeEvent(event)
+            return
+        event.ignore()
+        if self._closing_app:
+            return
+        self._closing_app = True
+        self._close_wait_ticks = 0
+        self.set_backend_status("正在停止后台任务", "warn")
         self.cancel_reader_chapter_workers()
-        self.settings_cache = self.current_settings_snapshot()
-        self.save_local_cache()
-        super().closeEvent(event)
+        for worker in list(self.download_workers.values()):
+            try:
+                worker.cancel()
+            except RuntimeError:
+                pass
+        for dialog in list(self.reader_dialogs) + list(self.local_reader_dialogs):
+            try:
+                if hasattr(dialog, "stop_online_worker"):
+                    dialog.stop_online_worker()
+                dialog.close()
+            except RuntimeError:
+                pass
+        QTimer.singleShot(350, self.finish_close_when_idle)
+
+    def finish_close_when_idle(self):
+        if not self.has_running_background_tasks() or self._close_wait_ticks >= 20:
+            self._allow_final_close = True
+            self.close()
+            return
+        self._close_wait_ticks += 1
+        QTimer.singleShot(350, self.finish_close_when_idle)
+
+    def has_running_background_tasks(self) -> bool:
+        workers = []
+        workers.extend(self.download_workers.values())
+        workers.extend(self.reader_chapter_workers.values())
+        for worker in [
+            self.scrape_worker,
+            self.chapter_worker,
+            self.incremental_worker,
+            self.domain_worker,
+            self.cache_restore_worker,
+        ]:
+            if worker is not None:
+                workers.append(worker)
+        for worker in workers:
+            try:
+                if worker.isRunning():
+                    return True
+            except RuntimeError:
+                continue
+        return False
 
     def switch_page(self, index: int):
         self.clear_album_selection()
@@ -3313,11 +4395,7 @@ class MainWindow(QMainWindow):
         try:
             from .browser_cookie_dialog import BrowserCookieDialog
         except Exception as exc:
-            QMessageBox.warning(
-                self,
-                "缺少组件",
-                f"无法打开浏览器验证窗口：{exc}\n请安装 PyQtWebEngine。",
-            )
+            self.show_toast(f"无法打开浏览器验证窗口：{exc}；请安装 PyQtWebEngine", 2400)
             return
 
         dialog = BrowserCookieDialog(self, self.list_url_edit.text().strip() or LIST_URL)
@@ -3325,7 +4403,7 @@ class MainWindow(QMainWindow):
             return
         header = dialog.cookie_header()
         if not header:
-            QMessageBox.information(self, "提示", "没有读取到该站点 Cookie，请确认页面已完成验证。")
+            self.show_toast("没有读取到该站点 Cookie，请确认页面已完成验证")
             return
         self.cookie_edit.setPlainText(header)
         self.login_cookie_edit.setPlainText(header)
@@ -3378,16 +4456,9 @@ class MainWindow(QMainWindow):
                 self.cover_cache.pop(album.album_id, None)
         self.save_local_cache()
         self.log(f"已清理当前结果缓存：{cache_key}，清理页面缓存 {removed} 组。")
-        QMessageBox.information(self, "清理完成", "已清理当前分类/榜单的页面缓存。点击“更新”会重新联网加载。")
+        self.show_toast("已清理当前分类/榜单页面缓存")
 
     def clear_all_runtime_cache(self):
-        answer = QMessageBox.question(
-            self,
-            "确认清理全部缓存",
-            "将清理页面结果缓存、详情缓存、封面内存缓存、SQLite 基础库和阅读图片缓存。\n设置与下载历史会保留。是否继续？",
-        )
-        if answer != QMessageBox.Yes:
-            return
         result_count = len(self.result_cache)
         detail_count = len(self.detail_cache)
         self.result_cache.clear()
@@ -3417,14 +4488,7 @@ class MainWindow(QMainWindow):
         self.save_local_cache()
         self.update_cache_path_label()
         self.log(f"已清理全部缓存：页面 {result_count} 组，详情 {detail_count} 本。")
-        QMessageBox.information(
-            self,
-            "清理完成",
-            "已清理全部运行缓存。\n"
-            f"页面缓存：{result_count} 组\n"
-            f"详情缓存：{detail_count} 本\n"
-            f"已删除：{len(removed_paths)} 个缓存路径",
-        )
+        self.show_toast(f"已清理全部运行缓存，删除 {len(removed_paths)} 个缓存路径", 2200)
 
     def clean_broken_cache(self):
         roots = [self.reader_cache_root()]
@@ -3449,7 +4513,7 @@ class MainWindow(QMainWindow):
                 except Exception as exc:
                     self.log(f"缓存清理跳过 {path}: {exc}")
         self.log(f"缓存清理完成：删除损坏文件 {removed_files} 个，空目录 {removed_dirs} 个。")
-        QMessageBox.information(self, "缓存清理完成", f"删除损坏文件 {removed_files} 个，空目录 {removed_dirs} 个。")
+        self.show_toast(f"删除损坏文件 {removed_files} 个，空目录 {removed_dirs} 个")
 
     def export_cache_bundle(self):
         directory = QFileDialog.getExistingDirectory(self, "选择缓存导出目录", str(self.data_root))
@@ -3463,7 +4527,7 @@ class MainWindow(QMainWindow):
         if reader_cache.exists():
             shutil.copytree(reader_cache, target / "reader_cache", dirs_exist_ok=True)
         self.log(f"缓存已导出：{target}")
-        QMessageBox.information(self, "导出完成", f"缓存已导出到：{target}")
+        self.show_toast(f"缓存已导出到：{target}", 2200)
 
     def import_cache_bundle(self):
         directory = QFileDialog.getExistingDirectory(self, "选择 comic18_cache 缓存目录", str(self.data_root))
@@ -3481,10 +4545,10 @@ class MainWindow(QMainWindow):
             shutil.copytree(reader_source, self.reader_cache_root(), dirs_exist_ok=True)
             imported.append("阅读图片缓存")
         if not imported:
-            QMessageBox.warning(self, "导入失败", "未找到可导入的 SQLite 或 reader_cache。")
+            self.show_toast("未找到可导入的 SQLite 或 reader_cache")
             return
         self.log(f"缓存已导入：{', '.join(imported)}")
-        QMessageBox.information(self, "导入完成", f"已导入：{', '.join(imported)}")
+        self.show_toast(f"已导入：{', '.join(imported)}")
 
     def quick_start_download(self):
         if self.result_total_count == 0 and self.id_edit.text().strip():
@@ -3820,23 +4884,23 @@ class MainWindow(QMainWindow):
     def load_current_chapters(self):
         album = self.current_album()
         if not album:
-            QMessageBox.information(self, "提示", "请先选择一个漫画。")
+            self.show_toast("请先选择一个漫画")
             return
         cached = self.detail_cache.get(album.album_id)
-        if cached and cached.chapters:
+        if cached and cached.chapters and self.album_has_detail_metadata(cached):
             self.albums[album.album_id] = copy.deepcopy(cached)
             self.show_chapters(album.album_id)
             self.set_backend_status("已从缓存加载", "ok")
             self.log(f"已从缓存加载章节：{cached.title}")
             return
-        if album.chapters:
+        if album.chapters and self.album_has_detail_metadata(album):
             self.detail_cache[album.album_id] = copy.deepcopy(album)
             self.show_chapters(album.album_id)
             self.set_backend_status("已从缓存加载", "ok")
             self.log(f"已从缓存加载章节：{album.title}")
             return
         if self.chapter_worker and self.chapter_worker.isRunning():
-            QMessageBox.information(self, "忙碌", "已有章节加载任务正在运行。")
+            self.show_toast("已有章节加载任务正在运行")
             return
         self.log(f"开始加载章节：{album.title}（{album.album_id}）")
         self.chapter_worker = ChapterWorker(album, self.network_config())
@@ -3848,13 +4912,21 @@ class MainWindow(QMainWindow):
         self.loading_label.show()
         self.chapter_worker.start()
 
-    def on_chapters_loaded(self, album_id: str, chapters: List[ChapterMeta]):
+    def on_chapters_loaded(self, album_id: str, detail_or_chapters):
         if album_id in self.albums:
-            self.albums[album_id].chapters = chapters
+            if isinstance(detail_or_chapters, AlbumMeta):
+                detail = detail_or_chapters
+                existing = self.albums.get(album_id)
+                if existing and existing.cover_url:
+                    detail.cover_url = existing.cover_url
+                self.albums[album_id] = detail
+            else:
+                self.albums[album_id].chapters = detail_or_chapters
             self.update_album_row(self.albums[album_id])
+            self.update_album_card_content(self.albums[album_id])
             self.detail_cache[album_id] = copy.deepcopy(self.albums[album_id])
             self.save_local_cache()
-            self.log(f"章节加载完成：{self.albums[album_id].title}，共 {len(chapters)} 章。")
+            self.log(f"章节加载完成：{self.albums[album_id].title}，共 {len(self.albums[album_id].chapters)} 章。")
         self.switch_page(self.home_page_index())
         self.show_chapters(album_id)
         QTimer.singleShot(80, self.refresh_task_controls)
@@ -4026,6 +5098,9 @@ class MainWindow(QMainWindow):
     def update_album_row(self, album: AlbumMeta):
         self.albums[album.album_id] = album
         self.detail_cache[album.album_id] = copy.deepcopy(album)
+        for index, item in enumerate(self.result_albums):
+            if item is not None and item.album_id == album.album_id:
+                self.result_albums[index] = album
 
     def render_result_page(self):
         self.clear_result_grid()
@@ -4121,7 +5196,7 @@ class MainWindow(QMainWindow):
         card_width = self.result_card_width()
         cover_width = max(112, min(148, card_width - 26))
         cover_height = int(cover_width * 4 / 3)
-        card_height = cover_height + 78
+        card_height = cover_height + 104
         card.setFixedSize(card_width, card_height)
         card.setCursor(Qt.PointingHandCursor)
         card.setStyleSheet(self.album_card_style(album.album_id in self.selected_album_ids))
@@ -4178,7 +5253,7 @@ class MainWindow(QMainWindow):
         sub = QLabel(f"作者：{album.author}\n章节：{len(album.chapters) if album.chapters else '-'}")
         sub.setObjectName("albumSub")
         sub.setWordWrap(True)
-        sub.setFixedHeight(30)
+        sub.setFixedHeight(38)
         sub.setStyleSheet("color:#64748b;font-size:11px;")
         layout.addWidget(sub)
         return card
@@ -4437,6 +5512,14 @@ class MainWindow(QMainWindow):
             return None
         return self.albums.get(self.current_album_id)
 
+    @staticmethod
+    def album_has_detail_metadata(album: AlbumMeta) -> bool:
+        return bool(
+            album.tags
+            or (album.author and album.author != "-")
+            or (album.page_count and album.page_count != "-")
+        )
+
     def show_chapters(self, album_id: str):
         self.chapter_table.setRowCount(0)
         album = self.albums.get(album_id)
@@ -4593,6 +5676,9 @@ class MainWindow(QMainWindow):
             try:
                 if not self.is_live_cover_target(album_id, label):
                     continue
+                history_record = getattr(label, "_history_record", None)
+                if isinstance(history_record, dict) and self.set_history_local_cover(history_record, label):
+                    continue
                 self.stop_label_movie(label)
                 label.setText("封面加载失败")
             except RuntimeError:
@@ -4658,10 +5744,10 @@ class MainWindow(QMainWindow):
     def open_reader_for_current(self):
         album = self.current_album()
         if not album:
-            QMessageBox.information(self, "提示", "请先选择一个漫画。")
+            self.show_toast("请先选择一个漫画")
             return
         if not album.chapters:
-            QMessageBox.information(self, "提示", "当前漫画没有章节信息。")
+            self.show_toast("当前漫画没有章节信息")
             return
 
         chapter = None
@@ -4675,6 +5761,7 @@ class MainWindow(QMainWindow):
 
         reader = HdMangaReaderWindow(f"漫画阅读 - {album.title}")
         self.reader_dialogs.append(reader)
+        self.bind_reader_download_action(reader, album)
         reader.destroyed.connect(lambda _=None, dialog=reader: self.forget_reader_dialog(dialog))
         reader.start_online_chapter(album, chapter, self.download_config(), self.log)
         detail = getattr(self, "detail_dialog", None)
@@ -4691,6 +5778,7 @@ class MainWindow(QMainWindow):
         chapter = chapter or album.chapters[0]
         reader = HdMangaReaderWindow(f"漫画阅读 - {album.title}")
         self.reader_dialogs.append(reader)
+        self.bind_reader_download_action(reader, album)
         reader.destroyed.connect(lambda _=None, dialog=reader: self.forget_reader_dialog(dialog))
         reader.start_online_chapter(copy.deepcopy(album), copy.deepcopy(chapter), self.download_config(), self.log)
         detail = getattr(self, "detail_dialog", None)
@@ -4711,6 +5799,7 @@ class MainWindow(QMainWindow):
             self.reader_dialogs.append(reader)
             self.pending_reader_by_album_id[album_id] = reader
             self.cancelled_reader_album_ids.discard(album_id)
+            self.bind_reader_download_action(reader, album)
             reader.destroyed.connect(lambda _=None, album_id=album_id: self.forget_pending_reader(album_id))
             reader.prepare_online_album(copy.deepcopy(album), self.download_config(), self.log, "正在加载章节，准备阅读")
             self.clear_album_selection()
@@ -4739,15 +5828,22 @@ class MainWindow(QMainWindow):
         worker.finished.connect(lambda album_id=album_id: self.reader_chapter_workers.pop(album_id, None))
         worker.start()
 
-    def on_reader_chapters_loaded(self, requested_id: str, album_id: str, chapters: List[ChapterMeta]):
+    def on_reader_chapters_loaded(self, requested_id: str, album_id: str, detail_or_chapters):
         if requested_id != album_id:
             return
         album = self.albums.get(album_id) or self.detail_cache.get(album_id)
         if not album:
             return
-        album.chapters = chapters
+        if isinstance(detail_or_chapters, AlbumMeta):
+            detail = detail_or_chapters
+            if album.cover_url:
+                detail.cover_url = album.cover_url
+            album = detail
+        else:
+            album.chapters = detail_or_chapters
         self.albums[album_id] = album
         self.detail_cache[album_id] = copy.deepcopy(album)
+        self.update_album_card_content(album)
         self.save_local_cache()
         if album_id in self.cancelled_reader_album_ids:
             return
@@ -4769,7 +5865,7 @@ class MainWindow(QMainWindow):
         self.pending_reader_by_album_id.pop(album_id, None)
         self.cancelled_reader_album_ids.discard(album_id)
         self.log(f"阅读章节加载失败 {album_id}：{message}")
-        QMessageBox.warning(self, "阅读加载失败", message)
+        self.show_toast(f"阅读加载失败：{message}", 2200)
 
     def forget_pending_reader(self, album_id: str):
         self.pending_reader_by_album_id.pop(album_id, None)
@@ -4800,6 +5896,9 @@ class MainWindow(QMainWindow):
     def forget_local_reader_dialog(self, dialog: QWidget):
         if dialog in self.local_reader_dialogs:
             self.local_reader_dialogs.remove(dialog)
+        if hasattr(self, "history_save_timer") and self.history_save_timer.isActive():
+            self.history_save_timer.stop()
+            self.save_local_cache()
 
     def selected_chapter_ids(self, album: AlbumMeta) -> List[str]:
         ids = []
@@ -4809,12 +5908,21 @@ class MainWindow(QMainWindow):
                 ids.append(album.chapters[row].chapter_id)
         return ids
 
-    def add_album_to_queue(self, album_id: str, switch_page: bool = True, refresh: bool = True) -> bool:
+    def add_album_to_queue(self, album_id: str, switch_page: bool = True, refresh: bool = True, toast_parent: Optional[QWidget] = None) -> bool:
         album = self.albums.get(album_id)
         if not album:
             return False
         if any(item.album_id == album_id for item in self.queue):
             self.log(f"下载队列已存在：{album.title}")
+            self.show_toast("漫画已存在，无需重复下载")
+            return False
+        if any(item.album_id == album_id for item in self.download_pending_queue) or album_id in self.download_workers:
+            self.log(f"漫画正在下载中，已跳过重复任务：{album.title}")
+            self.show_toast("漫画已在下载中，无需重复下载")
+            return False
+        if self.album_has_completed_local_resource(album):
+            self.log(f"本地已存在完整漫画，已跳过重复下载：{album.title}")
+            self.show_toast("漫画已存在，无需重复下载")
             return False
         queued = copy.deepcopy(album)
         if album_id == self.current_album_id and hasattr(self, "chapter_table"):
@@ -4822,7 +5930,7 @@ class MainWindow(QMainWindow):
         else:
             queued.selected_chapter_ids = [chapter.chapter_id for chapter in album.chapters]
         if not queued.selected_chapter_ids and queued.chapters:
-            QMessageBox.information(self, "提示", "请至少勾选一个章节。")
+            self.show_toast("请至少勾选一个章节")
             return False
         self.queue.append(queued)
         self.log(f"已加入下载队列：{queued.title}，章节 {self.queue_chapter_count(queued)} 个。")
@@ -4835,7 +5943,7 @@ class MainWindow(QMainWindow):
     def add_current_album_to_queue(self):
         album = self.current_album()
         if not album:
-            QMessageBox.information(self, "提示", "请先选择一个漫画。")
+            self.show_toast("请先选择一个漫画")
             return
         self.add_album_to_queue(album.album_id)
 
@@ -4846,7 +5954,7 @@ class MainWindow(QMainWindow):
                 added += 1
         if not added:
             if not quiet:
-                QMessageBox.information(self, "提示", "请先勾选漫画。")
+                self.show_toast("请先勾选漫画")
             return
         self.refresh_queue_table()
         if switch_page:
@@ -4879,6 +5987,7 @@ class MainWindow(QMainWindow):
                 font-weight:800;
                 color:#1f2937;
                 font-size:13px;
+                qproperty-alignment: AlignVCenter;
             }
             QLabel#downloadSub {
                 color:#64748b;
@@ -4899,21 +6008,24 @@ class MainWindow(QMainWindow):
                 font-weight:700;
             }
             QProgressBar#downloadProgress {
-                border:1px solid #d9e3ef;
-                border-radius:7px;
-                background:#f1f5f9;
-                height:14px;
+                border:1px solid #cbd8e6;
+                border-radius:8px;
+                background:#eef3f8;
+                min-height:16px;
+                max-height:16px;
                 text-align:center;
                 color:#334155;
                 font-size:11px;
                 font-weight:700;
             }
             QProgressBar#downloadProgress::chunk {
-                border-radius:8px;
+                border-radius:7px;
                 background:#2f80ed;
             }
             QPushButton#downloadCancel {
-                padding:5px 10px;
+                min-width:58px;
+                max-width:58px;
+                padding:5px 8px;
                 border-radius:6px;
                 background:#fff1f2;
                 border:1px solid #fecdd3;
@@ -4923,8 +6035,22 @@ class MainWindow(QMainWindow):
             QPushButton#downloadCancel:hover {
                 background:#ffe4e6;
             }
+            QPushButton#downloadRetry {
+                min-width:58px;
+                max-width:58px;
+                padding:5px 8px;
+                border-radius:6px;
+                background:#eff6ff;
+                border:1px solid #bfdbfe;
+                color:#1d4ed8;
+                font-weight:700;
+            }
+            QPushButton#downloadRetry:hover {
+                background:#dbeafe;
+            }
             """
         )
+
         outer = QHBoxLayout(card)
         outer.setContentsMargins(9, 8, 9, 8)
         outer.setSpacing(10)
@@ -4944,13 +6070,19 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
         top = QHBoxLayout()
+        top.setSpacing(8)
         name = title or (album.title if album else "-")
-        title_label = QLabel(QFontMetrics(self.font()).elidedText(name, Qt.ElideRight, 520))
+        title_width = 300 if album else 280
+        title_label = QLabel(QFontMetrics(self.font()).elidedText(name, Qt.ElideRight, title_width))
         title_label.setObjectName("downloadTitle")
         title_label.setToolTip(name)
+        title_label.setMinimumWidth(0)
+        title_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         status_label = QLabel(status)
         status_label.setObjectName("downloadStatus")
         status_label.setAlignment(Qt.AlignCenter)
+        status_label.setMinimumWidth(64)
+        status_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         top.addWidget(title_label, 1)
         top.addWidget(status_label)
         layout.addLayout(top)
@@ -4978,12 +6110,20 @@ class MainWindow(QMainWindow):
         progress.setValue(0)
         progress.setTextVisible(True)
         progress.setFormat("0%" if album else "无任务")
+        retry = QPushButton("重试")
+        retry.setObjectName("downloadRetry")
+        retry.setFixedWidth(64)
+        retry.setVisible(bool(album))
+        retry.setEnabled(bool(album))
         cancel = QPushButton("取消")
         cancel.setObjectName("downloadCancel")
+        cancel.setFixedWidth(64)
         cancel.setVisible(bool(album))
         if album:
+            retry.clicked.connect(lambda checked=False, album_id=album.album_id: self.retry_album_download(album_id))
             cancel.clicked.connect(lambda checked=False, album_id=album.album_id: self.cancel_album_download(album_id))
         progress_row.addWidget(progress, 1)
+        progress_row.addWidget(retry)
         progress_row.addWidget(cancel)
         layout.addLayout(progress_row)
         outer.addLayout(layout, 1)
@@ -5052,7 +6192,7 @@ class MainWindow(QMainWindow):
 
     def clear_queue(self):
         if self.is_download_busy():
-            QMessageBox.information(self, "下载中", "当前有漫画正在下载，请先取消下载后再清空队列。")
+            self.show_toast("当前有漫画正在下载，请先取消下载后再清空队列")
             return
         self.log("已清空下载等待队列。")
         self.queue.clear()
@@ -5070,7 +6210,7 @@ class MainWindow(QMainWindow):
 
     def start_download_queue(self):
         if not self.queue and not self.download_pending_queue:
-            QMessageBox.information(self, "提示", "下载队列为空。")
+            self.show_toast("下载队列为空")
             return
         if not self.download_pending_queue:
             active_ids = set(self.download_workers)
@@ -5102,7 +6242,10 @@ class MainWindow(QMainWindow):
         worker = DownloadWorker([copy.deepcopy(album)], self.background_download_config(), self)
         self.download_workers[album.album_id] = worker
         self.download_cancelled_ids.discard(album.album_id)
-        self.download_totals[album.album_id] = max(1, self.queue_chapter_count(album))
+        chapter_total = max(1, self.queue_chapter_count(album))
+        self.download_chapter_totals[album.album_id] = chapter_total
+        self.download_chapter_done_counts[album.album_id] = 0
+        self.download_totals[album.album_id] = chapter_total
         self.download_done_counts[album.album_id] = 0
         self.download_percent_by_id[album.album_id] = 0
         self.download_bytes[album.album_id] = 0
@@ -5110,6 +6253,7 @@ class MainWindow(QMainWindow):
         worker.log.connect(self.log)
         worker.album_started.connect(self.on_download_album_started)
         worker.album_progress.connect(self.on_download_album_progress)
+        worker.chapter_done.connect(self.on_download_chapter_done)
         worker.album_transfer.connect(self.on_download_album_transfer)
         worker.album_done.connect(self.on_download_album_done)
         worker.item_done.connect(lambda done_album, path: None if done_album.album_id in self.download_cancelled_ids else self.add_completed_item(done_album, path))
@@ -5133,7 +6277,10 @@ class MainWindow(QMainWindow):
             return
         self.current_download_album_id = album.album_id
         self.log(f"当前下载任务：{album.title}，正在解析图片列表。")
-        self.download_totals[album.album_id] = max(self.download_totals.get(album.album_id, 1), max(1, total))
+        chapter_total = max(1, total)
+        self.download_chapter_totals[album.album_id] = chapter_total
+        self.download_chapter_done_counts.setdefault(album.album_id, 0)
+        self.download_totals[album.album_id] = chapter_total
         self.download_done_counts.setdefault(album.album_id, 0)
         card = self.download_card_by_id.get(album.album_id)
         if card:
@@ -5144,10 +6291,13 @@ class MainWindow(QMainWindow):
                 status.setText("下载中")
             if progress:
                 current_done = self.download_done_counts.get(album.album_id, 0)
-                current_total = self.download_totals.get(album.album_id, max(1, total))
-                self.set_download_card_progress(progress, current_done, current_total, f"{self.download_percent(current_done, current_total)}%")
+                current_total = self.download_totals.get(album.album_id, chapter_total)
+                text = f"章节 {current_done}/{current_total}" if chapter_total > 1 else "解析图片"
+                self.set_download_card_progress(progress, current_done, current_total, text)
             if sub:
-                sub.setText(f"ID：{album.album_id}    图片：0 / {max(1, total)}")
+                sub_text = f"ID：{album.album_id}    章节：0 / {chapter_total}" if chapter_total > 1 else f"ID：{album.album_id}    正在解析图片"
+                sub.setText(sub_text)
+                sub.setToolTip(sub_text)
 
     def on_download_album_progress(self, album: AlbumMeta, done: int, total: int):
         if album.album_id in self.download_cancelled_ids:
@@ -5155,6 +6305,17 @@ class MainWindow(QMainWindow):
         self.current_download_album_id = album.album_id
         if done == 0 or done == total or done % 10 == 0:
             self.log(f"下载进度：{album.title} {done}/{max(1, total)} 张图片。")
+        chapter_total = self.download_chapter_totals.get(album.album_id, self.queue_chapter_count(album))
+        if chapter_total > 1:
+            chapter_done = self.download_chapter_done_counts.get(album.album_id, 0)
+            card = self.download_card_by_id.get(album.album_id)
+            if card:
+                sub = card.findChild(QLabel, "downloadSub")
+                if sub:
+                    sub_text = f"ID：{album.album_id}    章节：{chapter_done} / {chapter_total}    当前图片：{done} / {max(1, total)}"
+                    sub.setText(sub_text)
+                    sub.setToolTip(sub_text)
+            return
         prev_total = self.download_totals.get(album.album_id, 1)
         prev_done = self.download_done_counts.get(album.album_id, 0)
         total = max(prev_total, max(1, total))
@@ -5162,6 +6323,18 @@ class MainWindow(QMainWindow):
         self.download_totals[album.album_id] = total
         self.download_done_counts[album.album_id] = done
         self.flush_download_card_progress(copy.deepcopy(album), done, total)
+
+    def on_download_chapter_done(self, album: AlbumMeta, done: int, total: int):
+        if album.album_id in self.download_cancelled_ids:
+            return
+        total = max(1, total)
+        done = max(self.download_chapter_done_counts.get(album.album_id, 0), min(done, total))
+        self.download_chapter_totals[album.album_id] = total
+        self.download_chapter_done_counts[album.album_id] = done
+        if total > 1:
+            self.download_totals[album.album_id] = total
+            self.download_done_counts[album.album_id] = done
+            self.flush_download_card_progress(copy.deepcopy(album), done, total)
 
     def flush_download_card_progress(self, album: AlbumMeta, done: int, total: int):
         self.download_progress_pending.discard(album.album_id)
@@ -5174,9 +6347,17 @@ class MainWindow(QMainWindow):
                 status.setText("下载中" if done < total else "处理中")
             if progress:
                 percent = self.download_percent(done, total)
-                self.set_download_card_progress(progress, done, total, f"{percent}%")
+                chapter_total = self.download_chapter_totals.get(album.album_id, 1)
+                text = f"章节 {done}/{total}" if chapter_total > 1 else f"{percent}%"
+                self.set_download_card_progress(progress, done, total, text)
             if sub:
-                sub.setText(f"ID：{album.album_id}    图片：{done} / {max(1, total)}")
+                chapter_total = self.download_chapter_totals.get(album.album_id, 1)
+                if chapter_total > 1:
+                    sub_text = f"ID：{album.album_id}    章节：{done} / {max(1, total)}"
+                else:
+                    sub_text = f"ID：{album.album_id}    图片：{done} / {max(1, total)}"
+                sub.setText(sub_text)
+                sub.setToolTip(sub_text)
         self.update_download_summary()
 
     def on_download_album_transfer(self, album: AlbumMeta, bytes_done: int, speed: float):
@@ -5216,6 +6397,8 @@ class MainWindow(QMainWindow):
                 self.set_download_card_progress(progress, 1, 1, "100%")
             if transfer:
                 transfer.setText(f"已下：{self.format_bytes(self.download_bytes.get(album.album_id, 0))}    速度：已完成")
+        chapter_total = max(1, self.download_chapter_totals.get(album.album_id, self.download_totals.get(album.album_id, 1)))
+        self.download_chapter_done_counts[album.album_id] = chapter_total
         self.download_done_counts[album.album_id] = self.download_totals.get(album.album_id, 1)
         self.update_download_summary()
 
@@ -5249,10 +6432,55 @@ class MainWindow(QMainWindow):
                 progress.setFormat("失败")
             if transfer:
                 transfer.setText(f"已下：{self.format_bytes(self.download_bytes.get(album_id, 0))}    速度：已停止")
+        self.download_pending_queue = [album for album in self.download_pending_queue if album.album_id != album_id]
+        self.download_totals.pop(album_id, None)
+        self.download_done_counts.pop(album_id, None)
+        self.download_chapter_totals.pop(album_id, None)
+        self.download_chapter_done_counts.pop(album_id, None)
+        self.download_percent_by_id.pop(album_id, None)
+        self.update_download_summary()
+
+    def retry_album_download(self, album_id: str):
+        album = self.find_album_for_download_retry(album_id)
+        if not album:
+            self.show_toast("找不到可重试的漫画信息")
+            return
+        worker = self.download_workers.get(album_id)
+        if worker and worker.isRunning():
+            self.download_retry_ids.add(album_id)
+            self.download_cancelled_ids.add(album_id)
+            worker.cancel()
+            self.log(f"正在停止卡住的下载，稍后自动重试：{album.title}")
+        self.download_pending_queue = [item for item in self.download_pending_queue if item.album_id != album_id]
+        self.download_pending_queue.insert(0, copy.deepcopy(album))
+        if not any(item.album_id == album_id for item in self.queue):
+            self.queue.append(copy.deepcopy(album))
+        card = self.download_card_by_id.get(album_id)
+        if card:
+            status = card.findChild(QLabel, "downloadStatus")
+            progress = card.findChild(QProgressBar, "downloadProgress")
+            transfer = card.findChild(QLabel, "downloadTransfer")
+            if status:
+                status.setText("等待重试")
+            if progress:
+                self.set_download_card_progress(progress, 0, 1, "等待重试")
+            if transfer:
+                transfer.setText("正在重新排队")
+        self.cleanup_download_album_state(album_id)
+        if not (worker and worker.isRunning()):
+            self.pump_download_workers()
+
+    def find_album_for_download_retry(self, album_id: str) -> Optional[AlbumMeta]:
+        for source in (self.queue, self.download_pending_queue):
+            for album in source:
+                if album.album_id == album_id:
+                    return copy.deepcopy(album)
+        return copy.deepcopy(self.albums.get(album_id) or self.detail_cache.get(album_id)) if album_id in self.albums or album_id in self.detail_cache else None
 
     def cancel_album_download(self, album_id: str):
         worker = self.download_workers.get(album_id)
         self.download_cancelled_ids.add(album_id)
+        self.download_retry_ids.discard(album_id)
         self.queue = [album for album in self.queue if album.album_id != album_id]
         self.download_pending_queue = [album for album in self.download_pending_queue if album.album_id != album_id]
         self.cleanup_download_album_state(album_id)
@@ -5267,6 +6495,8 @@ class MainWindow(QMainWindow):
     def cleanup_download_album_state(self, album_id: str):
         self.download_totals.pop(album_id, None)
         self.download_done_counts.pop(album_id, None)
+        self.download_chapter_totals.pop(album_id, None)
+        self.download_chapter_done_counts.pop(album_id, None)
         self.download_percent_by_id.pop(album_id, None)
         self.download_bytes.pop(album_id, None)
         self.download_speeds.pop(album_id, None)
@@ -5275,6 +6505,7 @@ class MainWindow(QMainWindow):
 
     def forget_download_worker(self, album_id: str):
         self.download_workers.pop(album_id, None)
+        self.download_cancelled_ids.discard(album_id)
         if album_id not in {album.album_id for album in self.queue}:
             self.cleanup_download_album_state(album_id)
         self.pump_download_workers()
@@ -5359,9 +6590,12 @@ class MainWindow(QMainWindow):
     def add_completed_item(self, album: AlbumMeta, pdf_path: str):
         if not pdf_path:
             return
+        path = Path(pdf_path).expanduser()
+        if not self.is_completed_local_resource(path):
+            self.log(f"跳过未完成下载记录：{album.title}，{path}")
+            return
         row = self.completed_table.rowCount()
         self.completed_table.insertRow(row)
-        path = Path(pdf_path).expanduser()
         for col, value in enumerate([album.title, path.name, str(path)]):
             item = QTableWidgetItem(value)
             item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
@@ -5373,9 +6607,28 @@ class MainWindow(QMainWindow):
 
         image_dir = self.resolve_completed_image_dir(album, path)
         pdf_record_path = str(path) if path.suffix.lower() == ".pdf" else ""
-        existing_index = self.find_history_index_for_output(path)
+        existing_index = self.find_history_index_for_album(album.album_id)
+        if existing_index < 0:
+            existing_index = self.find_history_index_for_output(path)
+        outputs = [str(path)]
         if existing_index >= 0:
-            self.download_history.pop(existing_index)
+            old_record = self.download_history.pop(existing_index)
+            old_outputs = old_record.get("outputs") or []
+            if isinstance(old_outputs, list):
+                outputs.extend(str(value) for value in old_outputs if str(value).strip())
+            for key in ("path", "pdf_path", "image_dir"):
+                value = old_record.get(key) or ""
+                if value:
+                    outputs.append(str(value))
+        unique_outputs = []
+        seen_outputs = set()
+        for value in outputs:
+            output = Path(value).expanduser()
+            key = self.normalized_history_path(output)
+            if key in seen_outputs or not self.is_completed_local_resource(output):
+                continue
+            seen_outputs.add(key)
+            unique_outputs.append(str(output))
         record = {
             "title": album.title,
             "file": path.name,
@@ -5386,7 +6639,8 @@ class MainWindow(QMainWindow):
             "cover_url": album.cover_url,
             "format": path.suffix.lstrip(".") or self.selected_output_format(),
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "outputs": [str(path)],
+            "sort_order": str(len(self.download_history)),
+            "outputs": unique_outputs or [str(path)],
         }
         self.download_history.append(record)
         self.selected_history_index = len(self.download_history) - 1
@@ -5447,11 +6701,11 @@ class MainWindow(QMainWindow):
     def start_incremental_update(self, silent: bool = False):
         if self.incremental_worker and self.incremental_worker.isRunning():
             if not silent:
-                QMessageBox.information(self, "提示", "增量更新正在后台运行。")
+                self.show_toast("增量更新正在后台运行")
             return
         if self.is_busy():
             if not silent:
-                QMessageBox.information(self, "忙碌", "当前有任务运行，稍后再更新。")
+                self.show_toast("当前有任务运行，稍后再更新")
             return
         worker = IncrementalUpdateWorker(self.network_config(), parent=self)
         self.incremental_worker = worker
@@ -5472,7 +6726,7 @@ class MainWindow(QMainWindow):
         self.log(f"增量更新完成，发现 {new_count} 个新章节。")
         self.refresh_task_controls()
         if not silent:
-            QMessageBox.information(self, "增量更新完成", f"发现 {new_count} 个新章节。下载时会自动跳过旧章节。")
+            self.show_toast(f"发现 {new_count} 个新章节，下载时会自动跳过旧章节", 2200)
 
     def on_incremental_failed(self, message: str, silent: bool):
         self.incremental_worker = None
@@ -5480,7 +6734,7 @@ class MainWindow(QMainWindow):
         self.log(f"增量更新失败：{message}")
         self.refresh_task_controls()
         if not silent:
-            QMessageBox.warning(self, "增量更新失败", message)
+            self.show_toast(f"增量更新失败：{message}", 2200)
 
     def task_done(self, message: str, page_index: Optional[int] = None):
         if "采集" in message or "加载" in message:
@@ -5503,7 +6757,7 @@ class MainWindow(QMainWindow):
             self.set_backend_status("请求失败", "error")
         self.log(f"任务失败：{message}")
         QTimer.singleShot(80, self.refresh_task_controls)
-        QMessageBox.warning(self, "任务失败", message)
+        self.show_toast(f"任务失败：{message}", 2200)
 
     def cancel_current_task(self):
         if self.download_workers:

@@ -9,8 +9,8 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from PIL import Image
 
-from PyQt5.QtCore import QByteArray, QBuffer, QIODevice, QObject, QPoint, Qt, QThread, QTimer, pyqtSignal, QRectF, QPropertyAnimation, QEasingCurve, QSize
-from PyQt5.QtGui import QBrush, QColor, QImage, QImageReader, QMovie, QPainter, QPen, QPixmap, QWheelEvent
+from PyQt5.QtCore import QByteArray, QBuffer, QIODevice, QObject, QPoint, Qt, QThread, QTimer, pyqtSignal, QRectF, QSize
+from PyQt5.QtGui import QBrush, QColor, QFont, QIcon, QImage, QImageReader, QPainter, QPen, QPixmap, QWheelEvent
 from PyQt5.QtWidgets import (
     QAction,
     QComboBox,
@@ -19,7 +19,7 @@ from PyQt5.QtWidgets import (
     QGraphicsScene,
     QGraphicsView,
     QLabel,
-    QMessageBox,
+    QSizePolicy,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -34,13 +34,20 @@ except Exception:  # pragma: no cover - optional runtime dependency
 from ..backend.pdf_utils import IMAGE_SUFFIXES
 from ..backend.workers import ReaderWorker
 from ..backend.models import AlbumMeta, ChapterMeta, DownloadConfig
+from .toast import ToastManager
 
 PDF_SUFFIXES = {".pdf"}
 SUPPORTED_READER_SUFFIXES = IMAGE_SUFFIXES | PDF_SUFFIXES
 PAGE_STITCH_GAP = 0
 PDFIUM_LOCK = threading.RLock()
 ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
-READER_LOADING_MOVIE_PATH = ASSETS_DIR / "reader_magic_loader.gif"
+READER_CANVAS_BG = "#ffffff"
+READER_ICON_DIR = ASSETS_DIR / "reader_icons"
+
+
+def reader_icon(name: str) -> QIcon:
+    path = READER_ICON_DIR / f"{name}.svg"
+    return QIcon(str(path)) if path.exists() else QIcon()
 
 
 class PixmapCache:
@@ -198,13 +205,76 @@ class DecodeWorker(QThread):
 
     def run(self):
         try:
+            if self.isInterruptionRequested():
+                return
             if self.is_pdf:
                 image = HdImageDecoder.decode_pdf_page(self.path, self.index - 1, 300)
             else:
                 image = HdImageDecoder.decode_image(self.path)
+            if self.isInterruptionRequested():
+                return
             self.decoded.emit(self.index, image)
         except Exception as exc:
+            if self.isInterruptionRequested():
+                return
             self.failed.emit(self.index, str(exc))
+
+
+class ReaderLoadingOverlay(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.angle = 0
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.rotate)
+        self.text_font = QFont()
+        self.text_font.setPointSize(12)
+        self.text_font.setBold(True)
+
+    def start(self) -> None:
+        self.angle = 0
+        if not self.timer.isActive():
+            self.timer.start(24)
+        self.show()
+        self.raise_()
+        self.update()
+
+    def stop(self) -> None:
+        self.timer.stop()
+        self.hide()
+
+    def rotate(self) -> None:
+        self.angle = (self.angle + 9) % 360
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.fillRect(self.rect(), QColor(READER_CANVAS_BG))
+
+        center = self.rect().center()
+        size = 62
+        spinner_rect = QRectF(
+            center.x() - size / 2,
+            center.y() - size / 2 - 20,
+            size,
+            size,
+        )
+
+        base_pen = QPen(QColor("#dbe5f0"), 6)
+        base_pen.setCapStyle(Qt.RoundCap)
+        painter.setPen(base_pen)
+        painter.drawArc(spinner_rect, 0, 360 * 16)
+
+        active_pen = QPen(QColor("#2f80ed"), 6)
+        active_pen.setCapStyle(Qt.RoundCap)
+        painter.setPen(active_pen)
+        painter.drawArc(spinner_rect, -self.angle * 16, -115 * 16)
+
+        painter.setFont(self.text_font)
+        painter.setPen(QColor("#64748b"))
+        text_rect = QRectF(0, spinner_rect.bottom() + 14, self.width(), 34)
+        painter.drawText(text_rect, Qt.AlignHCenter | Qt.AlignTop, "Loading...")
 
 
 class MangaGraphicsView(QGraphicsView):
@@ -214,6 +284,7 @@ class MangaGraphicsView(QGraphicsView):
         super().__init__(parent)
         self._zoom = 1.0
         self._dragging = False
+        self.locked = False
         self._last_pos = QPoint()
         self.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing | QPainter.SmoothPixmapTransform)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
@@ -225,13 +296,20 @@ class MangaGraphicsView(QGraphicsView):
         self.verticalScrollBar().setSingleStep(28)
         self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
         self.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing, True)
-        self.setBackgroundBrush(Qt.white)
+        self.setBackgroundBrush(QBrush(QColor(READER_CANVAS_BG)))
 
     @property
     def zoom(self) -> float:
         return self._zoom
 
     def wheelEvent(self, event: QWheelEvent):
+        if self.locked:
+            delta = event.angleDelta().y()
+            if delta:
+                bar = self.verticalScrollBar()
+                bar.setValue(bar.value() - int(delta * 0.9))
+            event.accept()
+            return
         if event.modifiers() & Qt.ControlModifier:
             steps = event.angleDelta().y() / 120.0
             self.set_zoom(self._zoom * math.pow(1.12, steps))
@@ -258,7 +336,8 @@ class MangaGraphicsView(QGraphicsView):
         if self._dragging:
             delta = event.pos() - self._last_pos
             self._last_pos = event.pos()
-            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            if not self.locked:
+                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
             event.accept()
             return
@@ -284,8 +363,20 @@ class MangaGraphicsView(QGraphicsView):
         self._zoom = 1.0
         self.zoom_changed.emit(self._zoom)
 
+    def set_reader_locked(self, locked: bool) -> None:
+        self.locked = bool(locked)
+        if self.locked:
+            self._dragging = False
+            self.setCursor(Qt.ArrowCursor)
+            self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        else:
+            self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
 
 class HdMangaReaderWindow(QWidget):
+    page_position_changed = pyqtSignal(int, int, str)
+    download_requested = pyqtSignal(object)
+
     def __init__(self, title: str, parent=None):
         super().__init__(parent, Qt.Window)
         self.setWindowTitle(title)
@@ -314,12 +405,21 @@ class HdMangaReaderWindow(QWidget):
         self.decode_workers: List[DecodeWorker] = []
         self.decode_queue: List[Tuple[Path, int, bool, str, int]] = []
         self.max_decode_workers = 3
+        self.loading_status_tick = 0
+        self.online_progress_done = 0
+        self.online_progress_total = 0
+        self.loading_status_timer = QTimer(self)
+        self.loading_status_timer.timeout.connect(self.tick_loading_status)
         self.online_worker: Optional[ReaderWorker] = None
         self.preload_worker: Optional[ReaderWorker] = None
         self.album: Optional[AlbumMeta] = None
         self.chapter: Optional[ChapterMeta] = None
         self.config: Optional[DownloadConfig] = None
         self.log_callback = None
+        self.local_chapters: List[Tuple[str, List[Path], str]] = []
+        self.local_chapter_dirs: List[Tuple[str, Path, str]] = []
+        self.local_pdf_chapters: List[Tuple[str, Path, str]] = []
+        self._local_chapter_switching = False
         self._chapter_generation = 0
         self._closed = False
         self._force_close = False
@@ -327,58 +427,70 @@ class HdMangaReaderWindow(QWidget):
         self.default_zoom = 0.4
         self._default_zoom_applied = False
         self._fit_pending = False
+        self._restore_page = 0
+        self.reader_locked = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.toolbar = QToolBar(self)
         self.toolbar.setMovable(False)
         self.toolbar.setObjectName("readerToolbar")
+        self.toolbar.setIconSize(QSize(24, 24))
         chapter_label = QLabel("章节")
         chapter_label.setObjectName("readerToolbarLabel")
         self.chapter_combo = QComboBox(self)
         self.chapter_combo.setObjectName("readerChapterCombo")
-        self.chapter_combo.setMinimumWidth(280)
-        self.chapter_combo.setMaximumWidth(520)
+        self.chapter_combo.setMinimumWidth(170)
+        self.chapter_combo.setMaximumWidth(360)
         self.chapter_combo.setMaxVisibleItems(16)
         self.chapter_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.chapter_combo.currentIndexChanged.connect(self.on_chapter_combo_changed)
         self.page_label = QLabel("第 0 / 0 页")
+        self.page_label.setObjectName("readerPageLabel")
+        self.page_label.setContentsMargins(18, 0, 0, 0)
         self.zoom_label = QLabel("40%")
+        self.zoom_label.setObjectName("readerZoomLabel")
+        self.zoom_label.setContentsMargins(18, 0, 0, 0)
         self.status_label = QLabel("准备中")
+        self.status_label.setObjectName("readerStatusLabel")
+        self.status_label.setMinimumWidth(210)
+        self.status_label.setMaximumWidth(320)
+        self.status_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        status_font = QFont("Consolas")
+        status_font.setStyleHint(QFont.Monospace)
+        self.status_label.setFont(status_font)
         self.zoom_in_action = QAction("放大", self)
         self.zoom_out_action = QAction("缩小", self)
-        self.fit_width_action = QAction("适应宽度", self)
-        self.actual_size_action = QAction("原始大小", self)
+        self.fit_width_action = QAction("加入下载", self)
+        self.actual_size_action = QAction("适应宽度", self)
+        self.lock_reader_action = QAction(reader_icon("lock"), "", self)
+        self.lock_reader_action.setCheckable(True)
+        self.lock_reader_action.setToolTip("锁定阅读器")
         self.zoom_in_action.triggered.connect(lambda: self.manual_zoom(self.view.zoom * 1.15))
         self.zoom_out_action.triggered.connect(lambda: self.manual_zoom(self.view.zoom / 1.15))
-        self.fit_width_action.triggered.connect(self.fit_width)
-        self.actual_size_action.triggered.connect(self.actual_size)
+        self.fit_width_action.triggered.connect(self.request_current_album_download)
+        self.actual_size_action.triggered.connect(self.fit_width)
+        self.lock_reader_action.triggered.connect(self.toggle_reader_lock)
         self.toolbar.addAction(self.zoom_out_action)
         self.toolbar.addAction(self.zoom_in_action)
         self.toolbar.addAction(self.fit_width_action)
         self.toolbar.addAction(self.actual_size_action)
-        spacer = QWidget(self)
-        spacer.setMinimumWidth(16)
-        self.toolbar.addWidget(spacer)
+        self.toolbar.addAction(self.lock_reader_action)
+        left_spacer = QWidget(self)
+        left_spacer.setMinimumWidth(16)
+        self.toolbar.addWidget(left_spacer)
         self.toolbar.addWidget(chapter_label)
         self.toolbar.addWidget(self.chapter_combo)
-        self.toolbar.addWidget(QLabel("   "))
-        self.toolbar.addWidget(self.page_label)
-        self.toolbar.addWidget(QLabel("   "))
-        self.toolbar.addWidget(self.zoom_label)
-        self.toolbar.addWidget(QLabel("   "))
+        right_spacer = QWidget(self)
+        right_spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.toolbar.addWidget(right_spacer)
         self.toolbar.addWidget(self.status_label)
+        self.toolbar.addWidget(self.page_label)
+        self.toolbar.addWidget(self.zoom_label)
         layout.addWidget(self.toolbar)
         layout.addWidget(self.view, 1)
-        self.loading_overlay = QLabel(self.view.viewport())
-        self.loading_overlay.setAlignment(Qt.AlignCenter)
-        self.loading_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.loading_overlay.setStyleSheet("background:transparent;")
-        self.loading_movie: Optional[QMovie] = None
-        if READER_LOADING_MOVIE_PATH.exists():
-            self.loading_movie = QMovie(str(READER_LOADING_MOVIE_PATH), QByteArray(), self)
-            self.loading_movie.setScaledSize(QSize(210, 190))
-            self.loading_overlay.setMovie(self.loading_movie)
+        self.loading_overlay = ReaderLoadingOverlay(self.view.viewport())
+        self.loading_overlay.hide()
         self.view.verticalScrollBar().valueChanged.connect(self.update_current_page)
         self.apply_reader_style()
         self.show_loading_message("准备中")
@@ -398,6 +510,9 @@ class HdMangaReaderWindow(QWidget):
                 padding:8px 10px;
                 spacing:8px;
             }
+            QToolBar#readerToolbar QWidget {
+                background:transparent;
+            }
             QToolButton {
                 background:#f8fafc;
                 border:1px solid #dbe5f0;
@@ -410,7 +525,17 @@ class HdMangaReaderWindow(QWidget):
                 border-color:#b8d6ff;
                 color:#1d4ed8;
             }
+            QToolButton:checked {
+                background:#fff1f6;
+                border-color:#ffc3d8;
+            }
+            QToolButton:disabled {
+                background:rgba(241,245,249,0.55);
+                border-color:rgba(203,213,225,0.55);
+                color:rgba(100,116,139,0.58);
+            }
             QLabel {
+                background:transparent;
                 color:#334155;
                 font-weight:700;
             }
@@ -418,6 +543,16 @@ class HdMangaReaderWindow(QWidget):
                 color:#64748b;
                 font-size:12px;
                 padding-left:6px;
+            }
+            QLabel#readerStatusLabel {
+                color:#334155;
+                font-weight:700;
+                font-family:Consolas, "Cascadia Mono", monospace;
+            }
+            QLabel#readerPageLabel, QLabel#readerZoomLabel {
+                color:#1f2937;
+                font-weight:700;
+                font-family:Consolas, "Cascadia Mono", monospace;
             }
             QComboBox#readerChapterCombo {
                 background:#f8fafc;
@@ -488,9 +623,11 @@ class HdMangaReaderWindow(QWidget):
 
     def closeEvent(self, event):
         if self._force_close:
+            self.stop_loading_status_timer()
             super().closeEvent(event)
             return
         self._closed = True
+        self.stop_loading_status_timer()
         running_decoders = [worker for worker in self.decode_workers if worker.isRunning()]
         online_running = bool(
             (self.online_worker and self.online_worker.isRunning())
@@ -526,6 +663,7 @@ class HdMangaReaderWindow(QWidget):
         worker = self.sender()
         if worker is self.online_worker:
             self.online_worker = None
+        self.update_loaded_status()
         self.finish_deferred_close()
 
     def on_preload_worker_finished(self) -> None:
@@ -549,6 +687,8 @@ class HdMangaReaderWindow(QWidget):
                 self.create_placeholder(index, size=self.estimated_page_size())
         self.layout_pages()
         self.update_page_label()
+        self.update_loaded_status()
+        self.restore_saved_page()
 
     def add_pixmap(self, index: int, pixmap: QPixmap) -> None:
         if self._closed or pixmap.isNull():
@@ -573,7 +713,37 @@ class HdMangaReaderWindow(QWidget):
         elif not self._default_zoom_applied:
             self.apply_default_zoom()
         self.update_current_page()
-        self.status_label.setText(f"已加载 {len(self.items)} / {self.page_count or len(self.items)}")
+        self.update_loaded_status()
+
+    def update_loaded_status(self) -> None:
+        total = self.page_count or self.online_progress_total or len(self.items)
+        loaded = min(total, max(len(self.items), self.loaded_count, self.online_progress_done if not self.items else 0))
+        progress_text = f"已加载 {loaded}页/共{total}页"
+        if self.is_reader_loading():
+            self.status_label.setText(f"正在加载中，{progress_text}")
+            self.stop_loading_status_timer()
+        else:
+            self.status_label.setText(progress_text)
+            self.stop_loading_status_timer()
+
+    def is_reader_loading(self) -> bool:
+        if self.online_worker and self.online_worker.isRunning():
+            return True
+        if self.decode_queue or self.decode_pending:
+            return True
+        return any(worker.isRunning() for worker in self.decode_workers)
+
+    def ensure_loading_status_timer(self) -> None:
+        if not self.loading_status_timer.isActive():
+            self.loading_status_timer.start(420)
+
+    def stop_loading_status_timer(self) -> None:
+        if self.loading_status_timer.isActive():
+            self.loading_status_timer.stop()
+
+    def tick_loading_status(self) -> None:
+        self.loading_status_tick = (self.loading_status_tick + 1) % 4
+        self.update_loaded_status()
 
     def layout_pages(self) -> None:
         old_vertical = self.view.verticalScrollBar().value()
@@ -600,6 +770,9 @@ class HdMangaReaderWindow(QWidget):
         self.view.verticalScrollBar().setValue(old_vertical)
 
     def fit_width(self) -> None:
+        if self.reader_locked:
+            self.show_reader_toast("阅读器已锁定，解锁后可调整缩放")
+            return
         self.auto_fit_width = True
         self.apply_fit_width()
 
@@ -628,11 +801,17 @@ class HdMangaReaderWindow(QWidget):
         self.view.set_zoom(self.default_zoom)
 
     def manual_zoom(self, zoom: float) -> None:
+        if self.reader_locked:
+            self.show_reader_toast("阅读器已锁定，解锁后可调整缩放")
+            return
         self.auto_fit_width = False
         self._default_zoom_applied = True
         self.view.set_zoom(zoom)
 
     def actual_size(self) -> None:
+        if self.reader_locked:
+            self.show_reader_toast("阅读器已锁定，解锁后可调整缩放")
+            return
         self.auto_fit_width = False
         self._default_zoom_applied = True
         self.view.reset_zoom()
@@ -657,34 +836,222 @@ class HdMangaReaderWindow(QWidget):
             if best is None or distance < best:
                 best = distance
                 selected = index
-        self.current_page = selected
-        self.update_page_label()
+        if selected != self.current_page:
+            self.current_page = selected
+            self.update_page_label()
+            self.page_position_changed.emit(self.current_page, self.page_count, self.current_source_key())
+        else:
+            self.update_page_label()
         self.schedule_decode_window(selected)
 
+    def current_source_key(self) -> str:
+        if self.chapter is not None:
+            return f"chapter:{self.chapter.chapter_id}"
+        if self.pdf_path is not None:
+            return str(self.pdf_path)
+        if self.image_paths:
+            first_path = self.image_paths.get(1)
+            return str(first_path.parent if first_path else "")
+        return ""
+
+    def set_restore_page(self, page: int) -> None:
+        self._restore_page = max(0, int(page or 0))
+
+    def restore_saved_page(self) -> None:
+        if self._restore_page <= 1 or self.page_count <= 0:
+            return
+        target = max(1, min(self._restore_page, self.page_count))
+        if target not in self.page_items:
+            return
+        self.scroll_to_page(target)
+        self._restore_page = 0
+
+    def scroll_to_page(self, page: int) -> None:
+        item = self.page_items.get(max(1, int(page or 1)))
+        if item is None:
+            return
+        self.view.ensureVisible(item, 0, 0)
+        self.update_current_page()
+
+    def show_reader_toast(self, message: str, duration_ms: int = 1700) -> None:
+        ToastManager.show(message, duration_ms, self)
+
+    def request_current_album_download(self) -> None:
+        if self.album is not None:
+            self.download_requested.emit(self.album)
+        else:
+            self.status_label.setText("本地记录缺少漫画 ID，无法加入下载")
+            self.show_reader_toast("当前漫画缺少 ID，无法加入下载")
+
+    def mark_downloaded_action(self) -> None:
+        self.fit_width_action.setText("已下载")
+        self.fit_width_action.setEnabled(False)
+
+    def toggle_reader_lock(self, checked: bool) -> None:
+        self.set_reader_lock(bool(checked))
+
+    def set_reader_lock(self, locked: bool) -> None:
+        self.reader_locked = bool(locked)
+        self.view.set_reader_locked(self.reader_locked)
+        self.zoom_in_action.setEnabled(not self.reader_locked)
+        self.zoom_out_action.setEnabled(not self.reader_locked)
+        self.actual_size_action.setEnabled(not self.reader_locked)
+        self.lock_reader_action.setIcon(reader_icon("lock_active" if self.reader_locked else "lock"))
+        self.lock_reader_action.setText("")
+        self.lock_reader_action.setToolTip("解锁阅读器" if self.reader_locked else "锁定阅读器")
+        self.lock_reader_action.setChecked(self.reader_locked)
+        self.show_reader_toast("阅读器已锁定" if self.reader_locked else "阅读器已解锁")
+
     def start_decode_image_paths(self, paths: Iterable[Path]) -> None:
+        if not self._local_chapter_switching:
+            self.local_chapters = []
+            self.local_chapter_dirs = []
+            self.local_pdf_chapters = []
         self.reset_reader_state()
         self._chapter_generation += 1
         image_paths = [path for path in paths if path.exists() and path.is_file()]
         self.pdf_path = None
         self.pdf_fallback_image_paths = []
         self.failed_pages.clear()
-        self.set_total_pages(len(image_paths))
+        self.page_count = len(image_paths)
+        self.loaded_count = 0
+        self.update_page_label()
         if not image_paths:
             self.status_label.setText("没有找到可阅读图片")
-            QMessageBox.warning(self, "阅读失败", "没有找到可阅读的本地图片。")
+            self.show_reader_toast("没有找到可阅读的本地图片")
             return
-        self.status_label.setText("正在准备高清阅读缓存")
+        self.update_loaded_status()
         self.image_paths = {index: path for index, path in enumerate(image_paths, start=1)}
+        default_size = (1600, 2200)
         for index, path in enumerate(image_paths, start=1):
             key = str(path.resolve())
             cached = self.cache.get(key)
             if cached is not None:
                 self.add_pixmap(index, cached)
                 continue
-            self.create_placeholder(index, path)
+            self.create_placeholder(index, size=default_size)
         self.layout_pages()
         self.apply_default_zoom()
-        self.schedule_decode_window(1, radius=3)
+        self.restore_saved_page()
+        self.schedule_decode_window(self.current_page or 1, radius=3)
+
+    def start_local_chapter_dirs(self, chapters: List[Tuple[str, Path, str]], restore_source: str = "") -> None:
+        self.local_chapters = []
+        self.local_pdf_chapters = []
+        valid = [(title, path, source) for title, path, source in chapters if path.exists() and path.is_dir()]
+        if not valid:
+            self.start_decode_image_paths([])
+            return
+        self.local_chapter_dirs = valid
+        self.chapter_combo.blockSignals(True)
+        self.chapter_combo.clear()
+        for index, (title, path, source) in enumerate(valid, start=1):
+            text = f"第 {index} 章  {title}" if len(valid) > 1 else title
+            self.chapter_combo.addItem(text, source)
+            self.chapter_combo.setItemData(self.chapter_combo.count() - 1, str(path), Qt.ToolTipRole)
+        current = 0
+        if restore_source:
+            normalized_restore = str(Path(restore_source).expanduser()).lower()
+            for index, (_, _, source) in enumerate(valid):
+                if str(Path(source).expanduser()).lower() == normalized_restore:
+                    current = index
+                    break
+        self.chapter_combo.setEnabled(len(valid) > 1)
+        self.chapter_combo.setCurrentIndex(current)
+        self.chapter_combo.blockSignals(False)
+        self.load_local_chapter_dir(current)
+
+    def load_local_chapter_dir(self, index: int) -> None:
+        if index < 0 or index >= len(self.local_chapter_dirs):
+            return
+        chapters = list(self.local_chapter_dirs)
+        title, directory, _ = chapters[index]
+        self._local_chapter_switching = True
+        try:
+            paths = collect_reader_images(directory)
+            self.start_decode_image_paths(paths)
+            self.local_chapter_dirs = chapters
+            self.status_label.setText(f"本地章节：{title}")
+        finally:
+            self._local_chapter_switching = False
+
+    def start_local_chapters(self, chapters: List[Tuple[str, List[Path], str]], restore_source: str = "") -> None:
+        self.local_chapter_dirs = []
+        self.local_pdf_chapters = []
+        valid = [(title, [path for path in paths if path.exists() and path.is_file()], source) for title, paths, source in chapters]
+        valid = [(title, paths, source) for title, paths, source in valid if paths]
+        if not valid:
+            self.start_decode_image_paths([])
+            return
+        self.local_chapters = valid
+        self.chapter_combo.blockSignals(True)
+        self.chapter_combo.clear()
+        for index, (title, paths, source) in enumerate(valid, start=1):
+            text = f"第 {index} 章  {title} ({len(paths)} 页)" if len(valid) > 1 else f"{title} ({len(paths)} 页)"
+            self.chapter_combo.addItem(text, source)
+            self.chapter_combo.setItemData(self.chapter_combo.count() - 1, text, Qt.ToolTipRole)
+        current = 0
+        if restore_source:
+            normalized_restore = str(Path(restore_source).expanduser()).lower()
+            for index, (_, _, source) in enumerate(valid):
+                if str(Path(source).expanduser()).lower() == normalized_restore:
+                    current = index
+                    break
+        self.chapter_combo.setEnabled(len(valid) > 1)
+        self.chapter_combo.setCurrentIndex(current)
+        self.chapter_combo.blockSignals(False)
+        self.load_local_chapter(current)
+
+    def load_local_chapter(self, index: int) -> None:
+        if index < 0 or index >= len(self.local_chapters):
+            return
+        chapters = list(self.local_chapters)
+        title, paths, _ = self.local_chapters[index]
+        self._local_chapter_switching = True
+        try:
+            self.start_decode_image_paths(paths)
+            self.local_chapters = chapters
+            self.status_label.setText(f"本地章节：{title}")
+        finally:
+            self._local_chapter_switching = False
+
+    def start_local_pdf_chapters(self, chapters: List[Tuple[str, Path, str]], restore_source: str = "") -> None:
+        valid = [(title, path, source) for title, path, source in chapters if path.exists() and path.is_file()]
+        if not valid:
+            return
+        self.local_chapters = []
+        self.local_chapter_dirs = []
+        self.local_pdf_chapters = valid
+        self.chapter_combo.blockSignals(True)
+        self.chapter_combo.clear()
+        for index, (title, path, source) in enumerate(valid, start=1):
+            text = f"第 {index} 章  {title}"
+            self.chapter_combo.addItem(text, source)
+            self.chapter_combo.setItemData(self.chapter_combo.count() - 1, str(path), Qt.ToolTipRole)
+        current = 0
+        if restore_source:
+            normalized_restore = str(Path(restore_source).expanduser()).lower()
+            for index, (_, _, source) in enumerate(valid):
+                if str(Path(source).expanduser()).lower() == normalized_restore:
+                    current = index
+                    break
+        self.chapter_combo.setEnabled(len(valid) > 1)
+        self.chapter_combo.setCurrentIndex(current)
+        self.chapter_combo.blockSignals(False)
+        self.load_local_pdf_chapter(current)
+
+    def load_local_pdf_chapter(self, index: int) -> None:
+        if index < 0 or index >= len(self.local_pdf_chapters):
+            return
+        chapters = list(self.local_pdf_chapters)
+        title, path, _ = chapters[index]
+        self._local_chapter_switching = True
+        try:
+            self.start_decode_pdf(path, [])
+            self.local_pdf_chapters = chapters
+            self.status_label.setText(f"本地 PDF 章节：{title}")
+        finally:
+            self._local_chapter_switching = False
 
     def image_size(self, path: Path) -> Tuple[int, int]:
         reader = QImageReader(str(path))
@@ -757,13 +1124,14 @@ class HdMangaReaderWindow(QWidget):
             return
         self.decode_pending.add(index)
         self.decode_queue.append((path, index, is_pdf, key, self._chapter_generation))
+        self.update_loaded_status()
         self.pump_decode_queue()
 
     def pump_decode_queue(self) -> None:
         if self._closed:
             self.decode_queue.clear()
             return
-        running = sum(1 for worker in self.decode_workers if worker.isRunning())
+        running = sum(1 for worker in self.decode_workers if worker.isRunning() and not worker.isInterruptionRequested())
         while self.decode_queue and running < self.max_decode_workers:
             path, index, is_pdf, key, generation = self.decode_queue.pop(0)
             worker = DecodeWorker(path, index, is_pdf, self)
@@ -775,6 +1143,8 @@ class HdMangaReaderWindow(QWidget):
             running += 1
 
     def start_decode_pdf(self, path: Path, fallback_image_paths: Optional[Iterable[Path]] = None) -> bool:
+        if not self._local_chapter_switching:
+            self.local_pdf_chapters = []
         self.reset_reader_state()
         self._chapter_generation += 1
         fallback_paths = [path for path in (fallback_image_paths or []) if path.exists() and path.is_file()]
@@ -785,7 +1155,7 @@ class HdMangaReaderWindow(QWidget):
                 self.status_label.setText("PDF 解码失败，已切换原文件阅读")
                 self.start_decode_image_paths(fallback_paths)
                 return True
-            QMessageBox.warning(self, "PDF 阅读失败", f"{exc}\n\n可以在历史记录中选择“原文件”方式阅读。")
+            self.show_reader_toast(f"PDF 阅读失败：{exc}", 2400)
             self.status_label.setText("PDF 阅读失败")
             return False
         if total <= 0:
@@ -793,15 +1163,17 @@ class HdMangaReaderWindow(QWidget):
                 self.status_label.setText("PDF 无页面，已切换原文件阅读")
                 self.start_decode_image_paths(fallback_paths)
                 return True
-            QMessageBox.warning(self, "PDF 阅读失败", "PDF 文件没有可渲染页面。")
+            self.show_reader_toast("PDF 文件没有可渲染页面")
             self.status_label.setText("PDF 无页面")
             return False
         self.pdf_path = path
         self.pdf_fallback_image_paths = fallback_paths
         self.image_paths = {}
         self.failed_pages.clear()
-        self.set_total_pages(total)
-        self.status_label.setText("正在按需渲染 PDF")
+        self.page_count = total
+        self.loaded_count = 0
+        self.update_page_label()
+        self.update_loaded_status()
         default_size = (1400, 2000)
         self.apply_default_zoom()
         for index in range(1, total + 1):
@@ -813,7 +1185,8 @@ class HdMangaReaderWindow(QWidget):
             self.create_placeholder(index, size=default_size)
         self.layout_pages()
         self.apply_default_zoom()
-        self.schedule_decode_window(1, radius=2)
+        self.restore_saved_page()
+        self.schedule_decode_window(self.current_page or 1, radius=2)
         return True
 
     def on_decoded(self, key: str, index: int, image: QImage, generation: Optional[int] = None) -> None:
@@ -839,6 +1212,7 @@ class HdMangaReaderWindow(QWidget):
             return
         self.mark_decode_failed(index)
         self.status_label.setText(f"第 {index} 页解码失败，已跳过")
+        QTimer.singleShot(1200, self.update_loaded_status)
 
     def mark_decode_failed(self, index: int) -> None:
         placeholder = self.placeholders.get(index)
@@ -859,34 +1233,22 @@ class HdMangaReaderWindow(QWidget):
 
     def show_loading_overlay(self) -> None:
         self.position_loading_overlay()
-        self.loading_overlay.show()
-        self.loading_overlay.raise_()
-        if self.loading_movie:
-            self.loading_movie.start()
-        else:
-            self.loading_overlay.setText("Loading")
+        self.loading_overlay.start()
 
     def hide_loading_overlay(self) -> None:
-        if self.loading_movie:
-            self.loading_movie.stop()
-        self.loading_overlay.hide()
+        self.loading_overlay.stop()
 
     def position_loading_overlay(self) -> None:
         if not hasattr(self, "loading_overlay"):
             return
         viewport = self.view.viewport().rect()
-        width, height = 260, 230
-        self.loading_overlay.setGeometry(
-            max(0, (viewport.width() - width) // 2),
-            max(0, (viewport.height() - height) // 2),
-            width,
-            height,
-        )
+        self.loading_overlay.setGeometry(viewport)
 
     def forget_decode_worker(self, worker: DecodeWorker) -> None:
         if worker in self.decode_workers:
             self.decode_workers.remove(worker)
         self.pump_decode_queue()
+        self.update_loaded_status()
         self.finish_deferred_close()
 
     def start_online_chapter(self, album: AlbumMeta, chapter: ChapterMeta, config: DownloadConfig, log_callback) -> None:
@@ -898,14 +1260,14 @@ class HdMangaReaderWindow(QWidget):
         self.reset_reader_state()
         self._chapter_generation += 1
         generation = self._chapter_generation
-        self.status_label.setText("正在后台下载章节")
         worker = ReaderWorker(album, chapter, config, self, fast_mode=True)
         self.online_worker = worker
+        self.update_loaded_status()
         worker.progress.connect(lambda done, total, generation=generation: self.on_online_progress(done, total, generation))
         worker.image_ready.connect(lambda index, image_path, generation=generation: self.on_online_image_ready(index, image_path, generation))
-        worker.failed.connect(lambda message, generation=generation: None if self._closed or generation != self._chapter_generation else QMessageBox.warning(self, "阅读加载失败", message))
+        worker.failed.connect(lambda message, generation=generation: None if self._closed or generation != self._chapter_generation else self.show_reader_toast(f"阅读加载失败：{message}", 2200))
         worker.log.connect(log_callback)
-        worker.finished_ok.connect(lambda generation=generation: None if self._closed or generation != self._chapter_generation else self.status_label.setText("章节加载完成"))
+        worker.finished_ok.connect(lambda generation=generation: None if self._closed or generation != self._chapter_generation else self.update_loaded_status())
         worker.finished.connect(self.on_online_worker_finished)
         worker.start()
         QTimer.singleShot(2500, lambda generation=generation: None if self._closed or generation != self._chapter_generation else self.start_next_chapter_preload(album, chapter, config, log_callback))
@@ -943,6 +1305,21 @@ class HdMangaReaderWindow(QWidget):
         self.chapter_combo.blockSignals(False)
 
     def on_chapter_combo_changed(self, index: int) -> None:
+        if self.local_chapter_dirs:
+            if self._local_chapter_switching or index < 0 or index >= len(self.local_chapter_dirs):
+                return
+            self.load_local_chapter_dir(index)
+            return
+        if self.local_chapters:
+            if self._local_chapter_switching or index < 0 or index >= len(self.local_chapters):
+                return
+            self.load_local_chapter(index)
+            return
+        if self.local_pdf_chapters:
+            if self._local_chapter_switching or index < 0 or index >= len(self.local_pdf_chapters):
+                return
+            self.load_local_pdf_chapter(index)
+            return
         if self._closed or self.album is None or self.config is None or self.log_callback is None:
             return
         if index < 0 or index >= len(self.album.chapters):
@@ -954,6 +1331,10 @@ class HdMangaReaderWindow(QWidget):
         self.start_online_chapter(self.album, chapter, self.config, self.log_callback)
 
     def reset_reader_state(self) -> None:
+        self._chapter_generation += 1
+        for worker in list(self.decode_workers):
+            if worker.isRunning():
+                worker.requestInterruption()
         self.decode_queue.clear()
         self.decode_pending.clear()
         self.failed_pages.clear()
@@ -966,6 +1347,10 @@ class HdMangaReaderWindow(QWidget):
         self.pdf_fallback_image_paths = []
         self.page_count = 0
         self.loaded_count = 0
+        self.online_progress_done = 0
+        self.online_progress_total = 0
+        self.loading_status_tick = 0
+        self.stop_loading_status_timer()
         self.current_page = 0
         self.last_scene_width = 0
         self._default_zoom_applied = False
@@ -975,6 +1360,7 @@ class HdMangaReaderWindow(QWidget):
         self.view.horizontalScrollBar().setValue(0)
         self.view.verticalScrollBar().setValue(0)
         self.update_page_label()
+        self.update_loaded_status()
 
     def start_next_chapter_preload(self, album: AlbumMeta, chapter: ChapterMeta, config: DownloadConfig, log_callback) -> None:
         if self._closed or self.preload_worker is not None:
@@ -998,8 +1384,10 @@ class HdMangaReaderWindow(QWidget):
         if self._closed:
             return
         if total:
+            self.online_progress_done = max(0, int(done or 0))
+            self.online_progress_total = max(0, int(total or 0))
             self.set_total_pages(total)
-        self.status_label.setText(f"后台下载 {done} / {total}")
+        self.update_loaded_status()
 
     def on_online_image_ready(self, index: int, image_path: str, generation: Optional[int] = None) -> None:
         if generation is not None and generation != self._chapter_generation:
@@ -1032,3 +1420,18 @@ def collect_reader_files(path: Path) -> Tuple[List[Path], Optional[Path]]:
         return images, None
     pdfs = sorted(child for child in path.iterdir() if child.is_file() and child.suffix.lower() in PDF_SUFFIXES)
     return [], (pdfs[0] if pdfs else None)
+
+
+def collect_reader_images(path: Path) -> List[Path]:
+    if not path.exists():
+        return []
+    if path.is_file():
+        return [path] if path.suffix.lower() in IMAGE_SUFFIXES else []
+    direct = sorted(child for child in path.iterdir() if child.is_file() and child.suffix.lower() in IMAGE_SUFFIXES)
+    if direct:
+        return direct
+    return sorted(
+        child
+        for child in path.rglob("*")
+        if child.is_file() and child.suffix.lower() in IMAGE_SUFFIXES
+    )

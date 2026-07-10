@@ -13,8 +13,11 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from .cache_db import ComicCacheDB
 from .jm_api import JmApiClient, PhotoDetail, parse_jm_id
 from .models import AlbumMeta, ChapterMeta, DownloadConfig, NetworkConfig
-from .pdf_utils import collect_images, images_to_pdf
+from .pdf_utils import collect_images, collect_images_recursive, images_to_pdf
 from .utils import safe_name
+
+PDF_AUTO_SPLIT_IMAGE_COUNT = 700
+PDF_MAX_IMAGES_PER_FILE = 280
 
 
 def ensure_album_id(expected_id: str, actual_id: str, requested_url: str, actual_url: str):
@@ -222,7 +225,9 @@ class ChapterWorker(QThread):
             else:
                 detail = client.get_album_detail(self.album.album_id)
             chapters = detail.chapters
-            self.chapters_loaded.emit(self.album.album_id, chapters)
+            if self.album.cover_url:
+                detail.cover_url = self.album.cover_url
+            self.chapters_loaded.emit(self.album.album_id, detail)
             self.log.emit(f"已加载 {self.album.title} 的 {len(chapters)} 个章节。")
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -316,10 +321,15 @@ class DownloadWorker(QThread):
             for album in self.albums:
                 if self.cancel_event.is_set():
                     self.log.emit("下载已取消。")
-                    break
+                    return
                 album_total = self._chapter_count(album)
                 self.album_started.emit(album, album_total)
                 chapter_paths = self._download_album(album)
+                if self.cancel_event.is_set():
+                    self.log.emit("下载已取消，未写入完成记录。")
+                    return
+                if not chapter_paths:
+                    raise RuntimeError(f"下载未生成有效输出：{album.title}")
                 self.album_done.emit(album)
                 for pdf_path in chapter_paths:
                     self.item_done.emit(album, str(pdf_path))
@@ -355,33 +365,47 @@ class DownloadWorker(QThread):
         album_dir = self.config.output_dir / f"JM{album.album_id}-{safe_name(album.title, album.album_id)}"
         album_dir.mkdir(parents=True, exist_ok=True)
         self._start_album_transfer(album, album_dir)
-        protocol_photos = self._prefetch_protocol_photos(client, album, chapters, cache_db)
-
         output_paths: List[Path] = []
-        chapter_done = 0
-        chapter_total = max(1, len(chapters))
-        for chapter in chapters:
-            if self.cancel_event.is_set():
-                return output_paths
-            self._download_chapter(client, album, chapter, album_dir, cache_db, protocol_photos.get(chapter.chapter_id))
-            chapter_done += 1
-            self._emit_global_chapter_done(album, chapter_done, chapter_total)
-            if not self.config.protocol_parser:
-                client.sleep()
+        try:
+            protocol_photos = self._prefetch_protocol_photos(client, album, chapters, cache_db)
 
-        if self.config.output_format == "images":
-            output_paths.append(album_dir)
-        elif self.config.output_format == "zip":
-            output_paths.append(self._make_zip(album_dir))
-        elif self.config.output_format == "pdf":
-            output_paths.extend(self._make_pdf_outputs(album_dir, chapters))
-        else:
-            raise RuntimeError(f"不支持的保存格式：{self.config.output_format}")
+            chapter_done = 0
+            chapter_total = max(1, len(chapters))
+            for chapter in chapters:
+                if self.cancel_event.is_set():
+                    raise RuntimeError("下载已取消")
+                self._download_chapter(client, album, chapter, album_dir, cache_db, protocol_photos.get(chapter.chapter_id))
+                if self.cancel_event.is_set():
+                    raise RuntimeError("下载已取消")
+                chapter_done += 1
+                self._emit_global_chapter_done(album, chapter_done, chapter_total)
+                if not self.config.protocol_parser:
+                    client.sleep()
 
-        if self.config.output_format in {"zip", "pdf"} and not self.config.keep_images:
-            shutil.rmtree(album_dir, ignore_errors=True)
-            self.log.emit(f"已删除图片目录：{album_dir}")
-        return output_paths
+            if self.config.output_format == "images":
+                output_paths.append(album_dir)
+            elif self.config.output_format == "zip":
+                output_paths.append(self._make_zip(album_dir))
+            elif self.config.output_format == "pdf":
+                try:
+                    output_paths.extend(self._make_pdf_outputs(album_dir, chapters))
+                except Exception as exc:
+                    if collect_images_recursive(album_dir):
+                        self.log.emit(f"PDF 生成失败，已保留完整图片目录作为下载结果：{exc}")
+                        output_paths.append(album_dir)
+                    else:
+                        raise
+            else:
+                raise RuntimeError(f"不支持的保存格式：{self.config.output_format}")
+
+            self._validate_album_outputs(album, output_paths)
+            if self.config.output_format in {"zip", "pdf"} and not self.config.keep_images:
+                shutil.rmtree(album_dir, ignore_errors=True)
+                self.log.emit(f"已删除图片目录：{album_dir}")
+            return output_paths
+        except Exception:
+            self._cleanup_incomplete_album(album_dir, output_paths)
+            raise
 
     def _emit_global_chapter_done(self, album: AlbumMeta, album_done: int, album_total: int):
         self._global_chapters_done = min(self._global_chapters_total, self._global_chapters_done + 1)
@@ -458,8 +482,7 @@ class DownloadWorker(QThread):
         if photo is None:
             photo = client.get_photo_detail(chapter.chapter_id, album, fetch_scramble=True)
         if not photo.images:
-            self.log.emit(f"未在章节 {chapter.title} 找到图片。")
-            return
+            raise RuntimeError(f"未在章节 {chapter.title} 找到图片。")
 
         chapter_dir.mkdir(parents=True, exist_ok=True)
         self._add_album_image_total(album, len(photo.images))
@@ -473,10 +496,13 @@ class DownloadWorker(QThread):
             ]
             for future in as_completed(futures):
                 if self.cancel_event.is_set():
-                    return
+                    raise RuntimeError("下载已取消")
                 future.result()
                 self._mark_album_images_done(album, 1)
-        cache_db.mark_chapter_downloaded(album.album_id, chapter, chapter_dir, len(collect_images(chapter_dir)))
+        downloaded_images = collect_images(chapter_dir)
+        if len(downloaded_images) < len(photo.images):
+            raise RuntimeError(f"章节下载不完整：{chapter.title}，{len(downloaded_images)}/{len(photo.images)}")
+        cache_db.mark_chapter_downloaded(album.album_id, chapter, chapter_dir, len(downloaded_images))
 
     def _mirror_cached_chapter(self, cached_path: Path, chapter_dir: Path):
         chapter_dir.mkdir(parents=True, exist_ok=True)
@@ -491,7 +517,7 @@ class DownloadWorker(QThread):
 
     def _download_image_slot(self, client: JmApiClient, album: AlbumMeta, photo, image_index: int, image_name: str, chapter_dir: Path):
         if self.cancel_event.is_set():
-            return
+            raise RuntimeError("下载已取消")
         raw_suffix = Path(image_name).suffix.lower() or ".jpg"
         suffix = ".webp" if self.config.cache_as_webp and raw_suffix != ".gif" else raw_suffix
         filename = chapter_dir / f"{image_index:05d}{suffix}"
@@ -503,7 +529,7 @@ class DownloadWorker(QThread):
             try:
                 self.cancel_event.wait(random.uniform(0.05, 0.18))
                 if self.cancel_event.is_set():
-                    return
+                    raise RuntimeError("下载已取消")
                 client.download_image(
                     url,
                     filename,
@@ -584,18 +610,79 @@ class DownloadWorker(QThread):
                 continue
         return total
 
+    def _validate_album_outputs(self, album: AlbumMeta, output_paths: List[Path]):
+        if self.cancel_event.is_set():
+            raise RuntimeError("下载已取消")
+        if not output_paths:
+            raise RuntimeError(f"下载未生成有效输出：{album.title}")
+        for path in output_paths:
+            if not path.exists():
+                raise RuntimeError(f"下载输出不存在：{path}")
+            if path.is_dir():
+                if not collect_images_recursive(path):
+                    raise RuntimeError(f"下载目录没有可用图片：{path}")
+            elif path.stat().st_size <= 0:
+                raise RuntimeError(f"下载输出文件为空：{path}")
+
+    def _cleanup_incomplete_album(self, album_dir: Path, output_paths: List[Path]):
+        targets: List[Path] = []
+        targets.extend(output_paths)
+        targets.append(album_dir)
+        seen = set()
+        for path in targets:
+            try:
+                key = str(path.resolve(strict=False)).lower()
+            except Exception:
+                key = str(path).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            if not path.exists():
+                continue
+            try:
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                self.log.emit(f"已清理未完成下载：{path}")
+            except Exception as exc:
+                self.log.emit(f"清理未完成下载失败：{path}，{exc}")
+
     def _make_pdf_outputs(self, album_dir: Path, chapters: List[ChapterMeta]) -> List[Path]:
         outputs: List[Path] = []
+        chapter_dirs = self._chapter_dirs(album_dir)
+        total_images = sum(len(collect_images(chapter_dir)) for chapter_dir in chapter_dirs)
         if self.config.pdf_split_chapters and len(chapters) > 1:
-            for chapter_dir in self._chapter_dirs(album_dir):
+            for chapter_dir in chapter_dirs:
                 pdf_path = self._unique_path(album_dir.parent, f"{album_dir.name} - {chapter_dir.name}", ".pdf")
                 images_to_pdf(collect_images(chapter_dir), pdf_path)
                 outputs.append(pdf_path)
                 self.log.emit(f"已生成 PDF：{pdf_path}")
             return outputs
+        if total_images > PDF_AUTO_SPLIT_IMAGE_COUNT:
+            if len(chapter_dirs) > 1:
+                self.log.emit(f"图片数量 {total_images} 较多，自动按章节拆分 PDF，避免后处理失败。")
+                for chapter_dir in chapter_dirs:
+                    images = collect_images(chapter_dir)
+                    if not images:
+                        continue
+                    pdf_path = self._unique_path(album_dir.parent, f"{album_dir.name} - {chapter_dir.name}", ".pdf")
+                    images_to_pdf(images, pdf_path)
+                    outputs.append(pdf_path)
+                    self.log.emit(f"已生成 PDF：{pdf_path}")
+                return outputs
+            self.log.emit(f"图片数量 {total_images} 较多，自动分卷生成 PDF，避免后处理失败。")
+            images = collect_images(album_dir)
+            for start in range(0, len(images), PDF_MAX_IMAGES_PER_FILE):
+                part = start // PDF_MAX_IMAGES_PER_FILE + 1
+                pdf_path = self._unique_path(album_dir.parent, f"{album_dir.name} - part{part:02d}", ".pdf")
+                images_to_pdf(images[start:start + PDF_MAX_IMAGES_PER_FILE], pdf_path)
+                outputs.append(pdf_path)
+                self.log.emit(f"已生成 PDF：{pdf_path}")
+            return outputs
 
         image_paths = []
-        for chapter_dir in self._chapter_dirs(album_dir):
+        for chapter_dir in chapter_dirs:
             image_paths.extend(collect_images(chapter_dir))
         pdf_path = self._unique_path(album_dir.parent, album_dir.name, ".pdf")
         images_to_pdf(image_paths, pdf_path)

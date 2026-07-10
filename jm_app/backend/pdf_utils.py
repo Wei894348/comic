@@ -15,6 +15,16 @@ def collect_images(directory: Path) -> List[Path]:
     )
 
 
+def collect_images_recursive(directory: Path) -> List[Path]:
+    if not directory or not directory.exists():
+        return []
+    return sorted(
+        path
+        for path in directory.rglob("*")
+        if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+    )
+
+
 def image_to_rgb(image: Image.Image) -> Image.Image:
     if image.mode == "RGB":
         return image.copy()

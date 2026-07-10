@@ -4,8 +4,14 @@ __pycache__/
 
 .qtwebengine_profile/
 .session/
+.venv_build/
 
 downloads/
+JM下载器数据/
+dist_package/
+漫画下载/
+缓存/
+会话/
 
 .pytest_cache/
 .mypy_cache/
@@ -23,3 +29,8 @@ env/
 build/
 dist/
 *.spec
+
+*.sqlite3
+comic18_qt_cache.json
+desktop_pet.pid
+.reader_cache/

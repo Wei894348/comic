@@ -413,8 +413,8 @@ class JmApiClient:
             url,
             headers=self._image_headers(),
             stream=True,
-            timeout=(10, 60),
-            retry_wait_cap=10,
+            timeout=(8, 25),
+            retry_wait_cap=5,
         )
         chunks = []
         for chunk in response.iter_content(chunk_size=64 * 1024):
