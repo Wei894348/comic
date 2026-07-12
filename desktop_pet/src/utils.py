@@ -5,6 +5,27 @@ import sys
 from pathlib import Path
 
 
+def desktop_pet_base() -> Path:
+    """Return the desktop_pet resource root in source and PyInstaller builds."""
+    source_base = Path(__file__).resolve().parent.parent
+    candidates: list[Path] = []
+
+    bundle_base = getattr(sys, "_MEIPASS", None)
+    if bundle_base:
+        bundle_base = Path(bundle_base)
+        candidates.extend([bundle_base / "desktop_pet", bundle_base])
+
+    if source_base.name == "desktop_pet":
+        candidates.append(source_base)
+    candidates.append(source_base / "desktop_pet")
+    candidates.append(source_base)
+
+    for candidate in candidates:
+        if (candidate / "assets").exists() or (candidate / "config").exists():
+            return candidate
+    return candidates[0]
+
+
 def resource_path(relative_path: str) -> str:
     """获取打包后的资源绝对路径
 
@@ -25,7 +46,7 @@ def resource_path(relative_path: str) -> str:
                 resource_tail = Path(*parts[parts.index(marker) + (1 if marker == "desktop_pet" else 0):])
                 break
 
-    source_base = Path(__file__).resolve().parent.parent
+    source_base = desktop_pet_base()
     candidates = [relative] if relative.is_absolute() else []
     candidates.append(source_base / resource_tail)
 

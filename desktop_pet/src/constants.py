@@ -3,8 +3,10 @@
 from pathlib import Path
 import os
 
+from src.utils import desktop_pet_base
+
 # ============ 路径配置 ============
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = desktop_pet_base()
 GIF_DIR = BASE_DIR / "assets" / "gifs"
 VOICE_DIR = BASE_DIR / "assets" / "voice"
 CONFIG_FILE = Path(os.environ.get("APPDATA", Path.home())) / "ameath_config.json"

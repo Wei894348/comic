@@ -10,8 +10,9 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
+from src.utils import desktop_pet_base
 
-CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
+CONFIG_DIR = desktop_pet_base() / "config"
 CONFIG_PATH = CONFIG_DIR / "cosyvoice.yaml"
 LOCAL_CONFIG_PATH = CONFIG_DIR / "cosyvoice.local.yaml"
 _DASHSCOPE_HOST = "dashscope.aliyuncs.com"
