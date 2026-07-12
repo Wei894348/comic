@@ -57,8 +57,11 @@ class ClickHandler:
         app._pending_drag = False
 
     def on_right_click(self, event: tk.Event) -> None:
-        """鼠标右键点击事件 - 检测快速右键点击"""
+        """鼠标右键点击事件 - 显示托盘同款菜单并检测快速右键。"""
         self._check_rapid_clicks()
+        tray = getattr(self.app, "tray_controller", None)
+        if tray is None or not tray.show_context_menu():
+            self.app.quick_menu.show()
 
     def _handle_single_click(self, event: tk.Event) -> None:
         """处理单击"""
@@ -106,7 +109,8 @@ class ClickHandler:
                     2000, self._restore_idle_animation
                 )
             # 安静模式下也触发点击反应气泡
-            app.speech_bubble.show_click_reaction()
+            if not app.voice.play_random_click():
+                app.speech_bubble.show_click_reaction()
             return
 
         # 音乐播放模式下显示歌名和音乐控制组件
@@ -123,7 +127,8 @@ class ClickHandler:
                     )
             return
 
-        app.speech_bubble.show_click_reaction()
+        if not app.voice.play_random_click():
+            app.speech_bubble.show_click_reaction()
 
     def _handle_double_click(self, event: tk.Event) -> None:
         """处理双击"""

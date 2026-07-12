@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import pygame
 
+from src.media.mp3_metadata import read_mp3_duration
 from src.utils import resource_path
 
 if TYPE_CHECKING:
@@ -19,6 +20,15 @@ class MusicController:
 
     说明：为了避免影响外部模块，音乐状态字段仍保存在 app 上（_music_playing 等）。
     """
+
+    SINGING_CAPTIONS = (
+        "跟着星光轻轻哼唱...",
+        "把心事藏进旋律里...",
+        "啦啦啦，听见了吗？",
+        "这一句送给你呀~",
+        "让节拍带着我们继续前进。",
+        "闭上眼，和我一起摇一摇。",
+    )
 
     def __init__(self, app: "DesktopPet") -> None:
         self.app = app
@@ -61,21 +71,29 @@ class MusicController:
         self.pause()
         return True
 
-    def next(self) -> None:
+    def next(self) -> bool:
         """切换到下一首"""
         app = self.app
-        if not app._music_playlist:
-            return
+        if not app._music_playlist or app._music_switching:
+            return False
+        previous_index = app._music_index
         app._music_index = (app._music_index + 1) % len(app._music_playlist)
-        self.start(from_seek=False)
+        if self.start(from_seek=False):
+            return True
+        app._music_index = previous_index
+        return False
 
-    def prev(self) -> None:
+    def prev(self) -> bool:
         """切换到上一首"""
         app = self.app
-        if not app._music_playlist:
-            return
+        if not app._music_playlist or app._music_switching:
+            return False
+        previous_index = app._music_index
         app._music_index = (app._music_index - 1) % len(app._music_playlist)
-        self.start(from_seek=False)
+        if self.start(from_seek=False):
+            return True
+        app._music_index = previous_index
+        return False
 
     def get_current_path(self) -> str:
         app = self.app
@@ -114,11 +132,10 @@ class MusicController:
         if path in app._music_length_cache:
             return app._music_length_cache[path]
         try:
-            sound = pygame.mixer.Sound(path)
-            length = float(sound.get_length())
+            length = read_mp3_duration(path)
             app._music_length_cache[path] = length
             return length
-        except pygame.error:
+        except OSError:
             return 0.0
 
     def seek(self, seconds: float) -> None:
@@ -135,27 +152,43 @@ class MusicController:
     def start(self, from_seek: bool = False, start_pos: float = 0.0) -> bool:
         """开始音乐播放"""
         app = self.app
+        if app._music_switching or not app._music_playlist:
+            return False
+        was_playing = app._music_playing
         if not pygame.mixer.get_init():
             self.init_backend()
         if not pygame.mixer.get_init():
             return False
 
+        app._music_switching = True
+        self._cancel_end_check()
         try:
+            pygame.mixer.music.stop()
             pygame.mixer.music.load(app._music_playlist[app._music_index])
+        except pygame.error as e:
+            print(f"音乐播放失败: {e}")
+            app._music_switching = False
+            self.stop()
+            return False
+
+        try:
             if start_pos > 0:
                 pygame.mixer.music.play(start=start_pos)
             else:
                 pygame.mixer.music.play()
         except pygame.error as e:
-            print(f"音乐播放失败: {e}")
-            if start_pos > 0:
-                try:
-                    pygame.mixer.music.play()
-                except pygame.error as retry_error:
-                    print(f"音乐跳转失败: {retry_error}")
-                    return False
-            else:
+            if start_pos <= 0:
+                print(f"音乐播放失败: {e}")
+                self.stop()
                 return False
+            try:
+                pygame.mixer.music.play()
+            except pygame.error as retry_error:
+                print(f"音乐跳转失败: {retry_error}")
+                self.stop()
+                return False
+        finally:
+            app._music_switching = False
 
         app._last_frames = None
         app._last_delays = None
@@ -165,16 +198,19 @@ class MusicController:
         app._music_pause_start = 0.0
         app._music_paused_total = 0.0
 
-        app.animation.ensure_music_frames()
-        app.animation.switch_to_music_animation()
-        app._music_after_id = app.root.after(500, self._check_end)
+        if not was_playing:
+            app.animation.ensure_music_frames()
+            app.animation.switch_to_music_animation()
+        self._schedule_end_check()
+        if not from_seek:
+            self._start_singing_captions()
         return True
 
     def stop(self) -> None:
         """停止音乐播放"""
         app = self.app
-        if not app._music_playing:
-            return
+        self._cancel_end_check()
+        self._stop_singing_captions()
 
         try:
             pygame.mixer.music.stop()
@@ -225,20 +261,17 @@ class MusicController:
         """检查音乐是否播放完毕"""
         app = self.app
         app._music_after_id = None
-        if not app._music_playing:
+        if not app._music_playing or app._music_switching:
             return
         if app._music_paused:
-            app._music_after_id = app.root.after(500, self._check_end)
+            self._schedule_end_check()
             return
 
         if not pygame.mixer.music.get_busy():
             if app._music_playlist:
-                app._music_index = (app._music_index + 1) % len(app._music_playlist)
-                pygame.mixer.music.load(app._music_playlist[app._music_index])
-                pygame.mixer.music.play()
-                app._music_start_time = time.monotonic()
-                app._music_pause_start = 0.0
-                app._music_paused_total = 0.0
+                if not self.next():
+                    self.stop()
+                    return
 
                 # 更新气泡显示（与手动切换保持一致）
                 if hasattr(app, "speech_bubble") and app.speech_bubble.is_visible():
@@ -248,7 +281,56 @@ class MusicController:
                             f"🎵 {title}", duration=None, allow_during_music=True
                         )
 
-        app._music_after_id = app.root.after(500, self._check_end)
+        self._schedule_end_check()
+
+    def _cancel_end_check(self) -> None:
+        app = self.app
+        after_id = getattr(app, "_music_after_id", None)
+        if after_id:
+            try:
+                app.root.after_cancel(after_id)
+            except Exception:
+                pass
+        app._music_after_id = None
+
+    def _schedule_end_check(self) -> None:
+        self._cancel_end_check()
+        self.app._music_after_id = self.app.root.after(500, self._check_end)
+
+    def _start_singing_captions(self) -> None:
+        app = self.app
+        self._stop_singing_captions()
+        app._music_caption_index = 0
+        self._show_next_singing_caption()
+
+    def _show_next_singing_caption(self) -> None:
+        app = self.app
+        app._music_caption_after_id = None
+        if not app._music_playing or not self.SINGING_CAPTIONS:
+            return
+
+        caption = self.SINGING_CAPTIONS[
+            app._music_caption_index % len(self.SINGING_CAPTIONS)
+        ]
+        app._music_caption_index += 1
+        title = self.get_current_title()
+        text = f"♪ {caption} ♪" if not title else f"♫ {title}\n{caption}"
+        if hasattr(app, "speech_bubble") and app.speech_bubble:
+            app.speech_bubble.show_typing_response(text, speed=55)
+
+        app._music_caption_after_id = app.root.after(
+            4800, self._show_next_singing_caption
+        )
+
+    def _stop_singing_captions(self) -> None:
+        app = self.app
+        after_id = getattr(app, "_music_caption_after_id", None)
+        if after_id:
+            try:
+                app.root.after_cancel(after_id)
+            except Exception:
+                pass
+        app._music_caption_after_id = None
 
     def _load_playlist(self) -> list[str]:
         music_dir = Path(resource_path("assets/music"))

@@ -9,6 +9,8 @@ from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 import requests
+import pystray
+from PIL import Image as PILImage
 
 from PyQt5.QtCore import (
     QEasingCurve,
@@ -55,7 +57,6 @@ from PyQt5.QtWidgets import (
     QSpinBox,
     QStackedWidget,
     QStyle,
-    QSystemTrayIcon,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -65,7 +66,8 @@ from PyQt5.QtWidgets import (
     QShortcut,
 )
 
-from .app_icon import APP_DISPLAY_NAME, app_icon
+from .app_icon import APP_DISPLAY_NAME, app_icon, icon_path
+from ..desktop_pet_launcher import show_desktop_pet
 from ..backend.constants import DEFAULT_USER_AGENT, LIST_URL
 from ..backend.cookie_store import load_cookie_header, save_cookie_dict
 from ..backend.cache_db import ComicCacheDB
@@ -803,6 +805,9 @@ class AlbumCard(QFrame):
 
 class MainWindow(QMainWindow):
     async_log = pyqtSignal(str)
+    tray_show_requested = pyqtSignal()
+    tray_pet_requested = pyqtSignal()
+    tray_quit_requested = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -934,7 +939,7 @@ class MainWindow(QMainWindow):
         self._allow_final_close = False
         self._tray_quit_requested = False
         self._tray_notice_shown = False
-        self.tray_icon: Optional[QSystemTrayIcon] = None
+        self.tray_icon: Optional[pystray.Icon] = None
         self._close_wait_ticks = 0
         self.db_write_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="comic18-db")
         self.async_log.connect(self.log)
@@ -953,35 +958,57 @@ class MainWindow(QMainWindow):
             | Qt.WindowMaximizeButtonHint
             | Qt.WindowCloseButtonHint
         )
+        self.tray_show_requested.connect(self.show_from_tray)
+        self.tray_pet_requested.connect(self.show_desktop_pet_from_tray)
+        self.tray_quit_requested.connect(self.quit_from_tray)
         self.setup_tray_icon(icon)
         self._apply_style()
         self.setup_shortcuts()
         self._center_window()
 
-    def setup_tray_icon(self, icon: QIcon) -> None:
-        if not QSystemTrayIcon.isSystemTrayAvailable():
-            return
+    def setup_tray_icon(self, _icon: QIcon) -> None:
+        try:
+            tray_image = PILImage.open(icon_path()).convert("RGBA")
+            tray_image.thumbnail((64, 64), PILImage.Resampling.LANCZOS)
+        except Exception:
+            tray_image = PILImage.new("RGBA", (64, 64), (25, 118, 210, 255))
 
-        tray = QSystemTrayIcon(icon, self)
-        tray.setToolTip(APP_DISPLAY_NAME)
+        def request_show(icon, item) -> None:
+            self.tray_show_requested.emit()
 
-        menu = QMenu(self)
-        show_action = QAction("显示主窗口", self)
-        show_action.triggered.connect(self.show_from_tray)
-        quit_action = QAction("退出", self)
-        quit_action.triggered.connect(self.quit_from_tray)
-        menu.addAction(show_action)
-        menu.addSeparator()
-        menu.addAction(quit_action)
+        def request_quit(icon, item) -> None:
+            self.tray_quit_requested.emit()
 
-        tray.setContextMenu(menu)
-        tray.activated.connect(self.on_tray_activated)
-        tray.show()
+        def request_pet(icon, item) -> None:
+            self.tray_pet_requested.emit()
+
+        menu = pystray.Menu(
+            pystray.MenuItem("显示", request_show, default=True),
+            pystray.MenuItem("显示桌宠", request_pet),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("退出", request_quit),
+        )
+        tray = pystray.Icon(
+            "jm_downloader",
+            tray_image,
+            APP_DISPLAY_NAME,
+            menu,
+        )
+        tray.run_detached()
         self.tray_icon = tray
 
-    def on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
-            self.show_from_tray()
+    def show_desktop_pet_from_tray(self) -> None:
+        if not show_desktop_pet():
+            self.show_corner_floating_notice("桌宠启动失败，请检查运行日志", 2400)
+
+    def _stop_tray_icon(self) -> None:
+        tray = self.tray_icon
+        self.tray_icon = None
+        if tray is not None:
+            try:
+                tray.stop()
+            except Exception:
+                pass
 
     def show_from_tray(self) -> None:
         self.show()
@@ -992,6 +1019,7 @@ class MainWindow(QMainWindow):
 
     def quit_from_tray(self) -> None:
         self._tray_quit_requested = True
+        self._stop_tray_icon()
         self.show_corner_floating_notice("正在退出程序...", 1200)
         app = QApplication.instance()
         if app is not None:
@@ -1759,26 +1787,7 @@ class MainWindow(QMainWindow):
     def hide_to_lower_left(self):
         if not self.isVisible():
             return
-        if self.isMaximized():
-            self.showNormal()
-        screen = QApplication.primaryScreen()
-        available = screen.availableGeometry() if screen else self.geometry()
-        start_geo = self.geometry()
-        end_geo = QRect(
-            available.left() + 12,
-            available.bottom() - max(80, start_geo.height() // 3),
-            max(120, start_geo.width() // 3),
-            max(80, start_geo.height() // 3),
-        )
-        animation = QPropertyAnimation(self, b"geometry", self)
-        animation.setDuration(180)
-        animation.setStartValue(start_geo)
-        animation.setEndValue(end_geo)
-        animation.setEasingCurve(QEasingCurve.InQuad)
-        animation.finished.connect(self.hide)
-        animation.finished.connect(lambda: self.active_animations.remove(animation) if animation in self.active_animations else None)
-        self.active_animations.append(animation)
-        animation.start()
+        self.hide()
 
     def show_corner_floating_notice(self, message: str, duration_ms: int = 2400):
         notice = QLabel(message)
@@ -3472,7 +3481,10 @@ class MainWindow(QMainWindow):
         placeholder = self.create_history_drop_placeholder(card.height())
         insert_at = self.history_layout_index_of(card)
         self.history_cards_layout.insertWidget(max(0, insert_at), placeholder)
-        card.hide()
+        effect = QGraphicsOpacityEffect(card)
+        effect.setOpacity(0.34)
+        card.setGraphicsEffect(effect)
+        self.history_drag_opacity = effect
         self.history_drop_placeholder = placeholder
         self.history_drop_index = max(0, insert_at)
         self.refresh_history_drag_targets()
@@ -3497,19 +3509,20 @@ class MainWindow(QMainWindow):
     def create_history_drop_placeholder(self, height: int) -> QFrame:
         placeholder = QFrame()
         placeholder.setObjectName("historyDropPlaceholder")
-        placeholder.setMinimumHeight(max(86, height))
+        marker_height = max(10, min(16, height // 8 if height else 12))
+        placeholder.setFixedHeight(marker_height)
         placeholder.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         placeholder.setStyleSheet(
             """
             QFrame#historyDropPlaceholder {
-                background:qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 rgba(219,234,254,120), stop:1 rgba(191,219,254,70));
-                border:2px dashed rgba(96,165,250,170);
-                border-radius:28px;
+                background:qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 rgba(59,130,246,60), stop:0.5 rgba(37,99,235,210), stop:1 rgba(59,130,246,60));
+                border:1px solid rgba(37,99,235,120);
+                border-radius:6px;
             }
             """
         )
         effect = QGraphicsOpacityEffect(placeholder)
-        effect.setOpacity(0.72)
+        effect.setOpacity(0.86)
         placeholder.setGraphicsEffect(effect)
         return placeholder
 
@@ -4765,7 +4778,7 @@ class MainWindow(QMainWindow):
             not self._tray_quit_requested
             and not self._allow_final_close
             and self.tray_icon is not None
-            and self.tray_icon.isVisible()
+            and bool(self.tray_icon.visible)
         ):
             event.ignore()
             self.settings_cache = self.current_settings_snapshot()
@@ -4777,6 +4790,7 @@ class MainWindow(QMainWindow):
             return
 
         if self._allow_final_close or not self.has_running_background_tasks():
+            self._stop_tray_icon()
             self.settings_cache = self.current_settings_snapshot()
             self.save_local_cache()
             super().closeEvent(event)

@@ -16,13 +16,34 @@ def resource_path(relative_path: str) -> str:
     Returns:
         绝对路径
     """
-    try:
-        # PyInstaller 创建的临时目录
-        base_path = sys._MEIPASS  # type: ignore
-    except AttributeError:
-        # 开发环境
-        base_path = Path(__file__).resolve().parent.parent
-    return str(Path(base_path) / relative_path)
+    relative = Path(relative_path)
+    resource_tail = relative
+    if relative.is_absolute():
+        parts = relative.parts
+        for marker in ("desktop_pet", "assets"):
+            if marker in parts:
+                resource_tail = Path(*parts[parts.index(marker) + (1 if marker == "desktop_pet" else 0):])
+                break
+
+    source_base = Path(__file__).resolve().parent.parent
+    candidates = [relative] if relative.is_absolute() else []
+    candidates.append(source_base / resource_tail)
+
+    bundle_base = getattr(sys, "_MEIPASS", None)
+    if bundle_base:
+        bundle_base = Path(bundle_base)
+        candidates.extend(
+            [
+                bundle_base / "desktop_pet" / resource_tail,
+                bundle_base / resource_tail,
+            ]
+        )
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    return str(candidates[0])
 
 
 def get_version() -> str:

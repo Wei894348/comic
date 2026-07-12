@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import threading
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from PIL import Image, ImageTk
@@ -12,7 +13,6 @@ from src.animation.gif_utils import flip_frames, load_gif_frames, load_gif_frame
 from src.constants import (
     BEHAVIOR_MODE_ACTIVE,
     BEHAVIOR_MODE_QUIET,
-    MOTION_REST,
     SCALE_OPTIONS,
 )
 
@@ -32,6 +32,11 @@ class AnimationManager:
         self.cache = AnimationCache()
         self._raw_gif_cache: dict[str, Tuple[list, list]] = {}
         self._raw_gif_cache_enabled = False
+        self._music_preload_loading = False
+        self._music_preload_result: Optional[Tuple[list, list, Tuple[int, int]]] = None
+        self._music_install_frames: list = []
+        self._music_install_delays: list = []
+        self._music_install_index = 0
 
     def load_animations(self) -> None:
         """加载动画资源（带缓存）"""
@@ -102,26 +107,93 @@ class AnimationManager:
             self.cache.update_music(cache_key, app.music_frames, app.music_delays)
 
     def ensure_music_frames(self) -> None:
-        """确保音乐动画已加载"""
+        """Prepare music animation frames without blocking the Tk event loop."""
         app = self.app
         if getattr(app, "music_frames", None) and getattr(app, "music_delays", None):
             if app.music_frames and app.music_delays:
                 return
+        if self._music_preload_loading:
+            return
 
-        raw_frames, raw_delays = self._raw_gif_cache.get("ameath.gif", ([], []))
-        if not raw_frames:
-            raw_frames, raw_delays = load_gif_frames_raw("ameath.gif")
-            if self._raw_gif_cache_enabled:
-                self._raw_gif_cache["ameath.gif"] = (raw_frames, raw_delays)
+        if not getattr(app, "move_frames", None):
+            return
 
-        app.music_delays = raw_delays
-        if getattr(app, "move_frames", None) and app.move_frames and raw_frames:
-            base_size = (app.move_frames[0].width(), app.move_frames[0].height())
-            resized = [
-                frame.resize(base_size, Image.Resampling.BILINEAR)
-                for frame in raw_frames
-            ]
-            app.music_frames = [ImageTk.PhotoImage(frame) for frame in resized]
+        target_size = (app.move_frames[0].width(), app.move_frames[0].height())
+        self._music_preload_loading = True
+
+        def load_frames() -> None:
+            try:
+                raw_frames, raw_delays = self._raw_gif_cache.get(
+                    "ameath.gif", ([], [])
+                )
+                if not raw_frames:
+                    raw_frames, raw_delays = load_gif_frames_raw("ameath.gif")
+                    if self._raw_gif_cache_enabled:
+                        self._raw_gif_cache["ameath.gif"] = (
+                            raw_frames,
+                            raw_delays,
+                        )
+
+                resized_frames = [
+                    frame.resize(target_size, Image.Resampling.BILINEAR)
+                    for frame in raw_frames
+                ]
+                self._music_preload_result = (
+                    resized_frames,
+                    raw_delays,
+                    target_size,
+                )
+            except Exception as e:
+                print(f"音乐动画预热失败: {e}")
+                self._music_preload_result = ([], [], target_size)
+
+        threading.Thread(
+            target=load_frames,
+            name="desktop-pet-music-animation",
+            daemon=True,
+        ).start()
+        self._poll_music_preload()
+
+    def _poll_music_preload(self) -> None:
+        app = self.app
+        result = self._music_preload_result
+        if result is None:
+            if self._music_preload_loading:
+                app.root.after(30, self._poll_music_preload)
+            return
+
+        self._music_preload_result = None
+        frames, delays, target_size = result
+        current_size = (app.move_frames[0].width(), app.move_frames[0].height())
+        if target_size != current_size:
+            self._music_preload_loading = False
+            self.ensure_music_frames()
+            return
+
+        self._music_install_frames = frames
+        self._music_install_delays = delays
+        self._music_install_index = 0
+        app.music_frames = []
+        app.music_delays = delays
+        self._install_next_music_frame()
+
+    def _install_next_music_frame(self) -> None:
+        app = self.app
+        if self._music_install_index < len(self._music_install_frames):
+            frame = self._music_install_frames[self._music_install_index]
+            app.music_frames.append(ImageTk.PhotoImage(frame))
+            self._music_install_index += 1
+            app.root.after(1, self._install_next_music_frame)
+            return
+
+        self._music_install_frames = []
+        self._music_install_delays = []
+        self._music_preload_loading = False
+        self.cache.update_music(
+            int(app.scale_index), app.music_frames, app.music_delays
+        )
+        if app.music_frames and getattr(app, "_music_playing", False):
+            self.switch_to_music_animation()
 
     def preload_raw_gifs(self) -> None:
         """预加载部分原始 GIF 帧，减少缩放时解码耗时"""
@@ -225,8 +297,6 @@ class AnimationManager:
         app.current_frames = app.music_frames
         app.current_delays = app.music_delays
         app.frame_index = 0
-        app.motion_state = MOTION_REST
-        app.is_moving = False
         self._sync_window_size_and_position()
 
     def restore_animation_after_music(self) -> None:

@@ -61,9 +61,6 @@ class MotionController:
     def tick(self) -> None:
         """运动状态机主循环（性能优化版）"""
         self.app._move_after_id = None
-        if self.app._music_playing:
-            return self._schedule(MOVE_INTERVAL if MOVE_INTERVAL < 100 else 100)
-
         if self.app.is_paused or self.app.dragging:
             delay = 100 if self.app.is_paused else 50
             return self._schedule(delay)

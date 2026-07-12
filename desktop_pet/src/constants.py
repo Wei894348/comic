@@ -6,6 +6,7 @@ import os
 # ============ 路径配置 ============
 BASE_DIR = Path(__file__).resolve().parent.parent
 GIF_DIR = BASE_DIR / "assets" / "gifs"
+VOICE_DIR = BASE_DIR / "assets" / "voice"
 CONFIG_FILE = Path(os.environ.get("APPDATA", Path.home())) / "ameath_config.json"
 
 # ============ 显示配置 ============

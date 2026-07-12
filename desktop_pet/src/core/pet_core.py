@@ -28,6 +28,7 @@ from src.core.window_manager import WindowManager
 from src.interaction.click_handler import ClickHandler
 from src.interaction.drag_handler import DragHandler
 from src.media.music_controller import MusicController
+from src.media.voice_controller import VoiceController, typing_speed_for_audio
 from src.ai import AIChatEngine, AIConfigDialog
 from src.ui.ai_chat_panel import AIChatPanel
 from src.translate import TranslateWindow
@@ -56,6 +57,7 @@ class DesktopPet:
         self.drag = DragHandler(self)
         self.click = ClickHandler(self)
         self.music = MusicController(self)
+        self.voice = VoiceController(self)
         self.pomodoro = PomodoroManager(self)
         self.routine = RoutineManager(self)
         self.motion = MotionController(self)
@@ -160,13 +162,22 @@ class DesktopPet:
     def _start_loops(self) -> None:
         """启动循环"""
         self.music.init_backend()
+        self.voice.init_backend()
         self.animation.animate()
         self.motion.tick()
+        self.root.after(700, self.voice.play_startup)
+        self._music_warm_after_id = self.root.after(
+            1500, self._warm_music_animation
+        )
         self._topmost_after_id = self.root.after(2000, self._ensure_topmost)
         self._quit_after_id = self.root.after(100, self._check_quit)
         self._routine_after_id = self.root.after(
             1000, self.routine.tick
         )  # 1秒后开始作息检查
+
+    def _warm_music_animation(self) -> None:
+        self._music_warm_after_id = None
+        self.animation.ensure_music_frames()
 
     # ============ 番茄钟（兼容对外方法名） ============
 
@@ -302,6 +313,7 @@ class DesktopPet:
         self._quit_after_id = None
         if self._request_quit:
             self._cancel_pending_afters()
+            self.voice.stop()
             self.music.stop()
             # 注销全局快捷键
             from src.platform.hotkey import hotkey_manager
@@ -329,6 +341,7 @@ class DesktopPet:
             ("_quit_after_id", getattr(self, "_quit_after_id", None)),
             ("_pomodoro_after_id", getattr(self, "_pomodoro_after_id", None)),
             ("_music_after_id", getattr(self, "_music_after_id", None)),
+            ("_music_warm_after_id", getattr(self, "_music_warm_after_id", None)),
         ]
 
         for name, after_id in after_ids:
@@ -493,13 +506,32 @@ class DesktopPet:
 
         def on_response(response: str):
             """收到回复"""
-            self.speech_bubble.show_typing_response(response, speed=40)
+            self.show_ai_response(response)
 
         def on_error(error_msg: str):
             """处理错误"""
             self.speech_bubble.show(error_msg, duration=4000)
 
         self.ai_chat.send_message(message, on_response, on_error)
+
+    def show_ai_response(self, response: str) -> None:
+        """Start typing when synthesized speech starts playing."""
+
+        def show_response(audio_duration_ms: int | None = None) -> None:
+            speed = (
+                typing_speed_for_audio(response, audio_duration_ms)
+                if audio_duration_ms is not None
+                else 40
+            )
+            self.speech_bubble.show_typing_response(response, speed=speed)
+
+        started = self.voice.speak_text(
+            response,
+            on_playback_start=show_response,
+            on_failure=show_response,
+        )
+        if not started:
+            show_response()
 
     def quick_ai_chat(self, question: str | None = None) -> None:
         """快捷AI聊天
@@ -528,8 +560,7 @@ class DesktopPet:
 
             quick_reply = get_quick_reply(question)
             if quick_reply:
-                # 使用打字机效果显示预设回复
-                self.speech_bubble.show_typing_response(quick_reply, speed=40)
+                self.show_ai_response(quick_reply)
                 return
 
         self._send_ai_message(question)

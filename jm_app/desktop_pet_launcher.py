@@ -3,6 +3,7 @@ from __future__ import annotations
 import atexit
 import ctypes
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,8 @@ from .backend.runtime_paths import session_dir
 
 _pet_process: subprocess.Popen | None = None
 DESKTOP_PET_ARG = "--desktop-pet"
+PARENT_PID_ARG = "--parent-pid"
+SHOW_SIGNAL_ARG = "--show-signal"
 
 
 def _project_root() -> Path:
@@ -37,6 +40,10 @@ def _pid_path() -> Path:
     return _session_dir() / "desktop_pet.pid"
 
 
+def _show_signal_path() -> Path:
+    return _session_dir() / "desktop_pet.show"
+
+
 def _pythonw_executable() -> str:
     executable = Path(sys.executable)
     if getattr(sys, "frozen", False):
@@ -49,9 +56,15 @@ def _pythonw_executable() -> str:
 
 
 def _pet_command(entry: Path) -> list[str]:
+    runtime_args = [
+        PARENT_PID_ARG,
+        str(os.getpid()),
+        SHOW_SIGNAL_ARG,
+        str(_show_signal_path()),
+    ]
     if getattr(sys, "frozen", False):
-        return [_pythonw_executable(), DESKTOP_PET_ARG]
-    return [_pythonw_executable(), str(entry)]
+        return [_pythonw_executable(), DESKTOP_PET_ARG, *runtime_args]
+    return [_pythonw_executable(), str(entry), *runtime_args]
 
 
 def _is_process_running(pid: int) -> bool:
@@ -107,6 +120,7 @@ def start_desktop_pet() -> subprocess.Popen | None:
 
     log_file = _log_path().open("a", encoding="utf-8")
     try:
+        _show_signal_path().unlink(missing_ok=True)
         _pet_process = subprocess.Popen(
             _pet_command(entry),
             cwd=str(_project_root() if getattr(sys, "frozen", False) else pet_dir),
@@ -127,21 +141,45 @@ def start_desktop_pet() -> subprocess.Popen | None:
         log_file.close()
 
 
+def show_desktop_pet() -> bool:
+    process = _pet_process
+    pid = process.pid if process is not None and process.poll() is None else None
+    if pid is None:
+        existing_pid = _read_existing_pid()
+        if existing_pid and _is_process_running(existing_pid):
+            pid = existing_pid
+
+    if pid is None:
+        return start_desktop_pet() is not None
+
+    try:
+        _show_signal_path().write_text("show", encoding="utf-8")
+        return True
+    except OSError:
+        return False
+
+
 def stop_desktop_pet() -> None:
     global _pet_process
 
     process = _pet_process
+    pid = process.pid if process is not None else _read_existing_pid()
     _pet_process = None
-    if process is None or process.poll() is not None:
-        _pid_path().unlink(missing_ok=True)
-        return
 
-    process.terminate()
-    try:
-        process.wait(timeout=3)
-    except subprocess.TimeoutExpired:
-        process.kill()
+    if process is not None and process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()
+    elif pid and _is_process_running(pid):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+
     _pid_path().unlink(missing_ok=True)
+    _show_signal_path().unlink(missing_ok=True)
 
 
 atexit.register(stop_desktop_pet)

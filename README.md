@@ -1,44 +1,107 @@
-# JM 漫画下载器
+# comic18
 
-这是一个 Python + Qt 漫画下载器。界面已改为“先登录，再进入下载器”的结构，主界面包含左侧导航、漫画检索、章节选择、下载队列、下载中和已完成页面。
+`comic18` is a Python desktop downloader with a PyQt5 main app and an optional
+Ameath desktop pet companion. The main downloader manages search, album details,
+chapter selection, download queues, local cache, PDF generation, and reader
+state. The desktop pet provides tray controls, quick interactions, AI chat, and
+optional CosyVoice speech synthesis.
 
-## 安装
-
-```powershell
-pip install -r requirements.txt
-```
-
-## 运行
-
-```powershell
-python .\jm_qt_downloader.py
-```
-
-## 使用流程
-
-1. 在登录页输入账号和密码。
-2. 如果站点要求安全验证，请在系统浏览器完成登录/验证后，把请求 Cookie 粘贴到登录页或设置页。
-3. 进入主页后，可以按列表页抓取漫画，也可以输入 JM ID 或 album 链接。
-4. 选择漫画后点击“加载章节”，可勾选单集、多集，或全选章节。
-5. 点击“加入队列”，再到“队列中”页面点击“开始下载队列”。
-6. 每一集下载完成后会单独生成一个 PDF，例如 `001-第1集.pdf`、`002-第2集.pdf`。
-
-## 代码结构
+## Project Layout
 
 ```text
-jm_qt_downloader.py      # 启动入口
-jm_app/
-  constants.py           # 站点地址、默认 User-Agent
-  models.py              # 漫画、章节、网络配置、下载配置
-  utils.py               # ID、Cookie、安全验证页等通用工具
-  parsers.py             # 列表页、详情页、章节、图片链接解析
-  pdf_utils.py           # 图片转 PDF
-  http_client.py         # requests 会话、限速、重试、403/429 处理
-  workers.py             # Qt 后台采集、章节加载、下载线程
-  ui.py                  # 登录页、侧边栏主界面、队列和完成页
-  main.py                # QApplication 初始化
+downloader.py              # main entry; also launches the desktop pet subprocess
+jm_app/                    # PyQt downloader application
+  backend/                 # runtime paths, cache, services, and persistence
+  frontend/                # Qt UI, splash screen, dialogs, reader views
+desktop_pet/               # Ameath desktop pet
+  config/                  # safe default config files
+  assets/                  # bundled pet UI/media assets
+  src/                     # pet runtime, AI chat, tray, media, and UI modules
+assets/                    # downloader assets such as icons
+JM下载器.spec              # PyInstaller build configuration
+requirements.txt           # runtime dependencies
 ```
 
-## 说明
+Runtime data is intentionally kept out of Git. Downloaded comics, cache files,
+sessions, local databases, logs, and build outputs are ignored by `.gitignore`.
 
-程序不会绕过安全验证、破解验证码、使用代理池或对抗站点风控。若请求返回安全验证页、`403` 或 `429`，请暂停并在系统浏览器完成验证后复制 Cookie。
+## Setup
+
+```powershell
+cd F:\project\comic18
+python -m pip install -r requirements.txt
+```
+
+For the existing packaged build environment, use:
+
+```powershell
+.\.venv_build\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+## Run From Source
+
+```powershell
+python .\downloader.py
+```
+
+The downloader starts the desktop pet automatically. The pet can also be shown
+from the downloader tray/menu actions.
+
+## AI And Voice Configuration
+
+The committed default file is intentionally empty:
+
+```text
+desktop_pet/config/cosyvoice.yaml
+```
+
+For local CosyVoice credentials, create this ignored file:
+
+```text
+desktop_pet/config/cosyvoice.local.yaml
+```
+
+Example:
+
+```yaml
+cosyvoice:
+  enabled: true
+  api_key: "your-dashscope-api-key"
+  voice_id: "your-cosyvoice-voice-id"
+  model: "cosyvoice-v3.5-plus"
+```
+
+Environment variables are also supported:
+
+```text
+DASHSCOPE_API_KEY
+COSYVOICE_VOICE_ID
+COSYVOICE_MODEL
+```
+
+## Build
+
+```powershell
+cd F:\project\comic18
+.\.venv_build\Scripts\pyinstaller.exe --noconfirm .\JM下载器.spec
+```
+
+The packaged application is written to:
+
+```text
+F:\project\comic18\dist\JM下载器
+```
+
+To deploy it manually, copy the contents of that folder to:
+
+```text
+F:\project\JM下载器
+```
+
+Close any running `JM下载器.exe` process before overwriting the deployed folder.
+
+## Git Hygiene
+
+Commit source, documentation, default configuration, and build configuration.
+Do not commit downloaded comic resources, reader cache, session data, local
+SQLite databases, logs, `dist/`, or `build/`.

@@ -1,0 +1,10 @@
+# Default CosyVoice configuration for the desktop pet.
+# Leave this file without secrets in Git. For local credentials, create
+# desktop_pet/config/cosyvoice.local.yaml with the same keys, or use the
+# DASHSCOPE_API_KEY, COSYVOICE_VOICE_ID, and COSYVOICE_MODEL environment vars.
+
+cosyvoice:
+  enabled: false
+  api_key: ""
+  voice_id: ""
+  model: "cosyvoice-v3.5-plus"

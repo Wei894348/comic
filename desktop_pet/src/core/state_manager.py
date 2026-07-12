@@ -56,6 +56,9 @@ class StateManager:
         app._music_pause_start = 0.0
         app._music_paused_total = 0.0
         app._music_length_cache: dict[str, float] = {}
+        app._music_switching = False
+        app._music_caption_after_id = None
+        app._music_caption_index = 0
 
         # 拖动状态
         app.dragging = False

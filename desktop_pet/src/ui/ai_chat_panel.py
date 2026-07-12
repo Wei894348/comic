@@ -147,8 +147,7 @@ class AIChatPanel:
 
         # 发送给AI
         def on_response(response: str):
-            # 在气泡中显示AI回复
-            self.app.speech_bubble.show_typing_response(response, speed=40)
+            self.app.show_ai_response(response)
 
         def on_error(error_msg: str):
             # 在气泡中显示错误

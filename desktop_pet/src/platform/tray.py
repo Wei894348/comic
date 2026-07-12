@@ -8,6 +8,11 @@ from typing import TYPE_CHECKING
 import pystray
 from PIL import Image
 
+try:
+    from pystray._util import win32
+except ImportError:
+    win32 = None
+
 from src.constants import (
     BEHAVIOR_MODE_ACTIVE,
     BEHAVIOR_MODE_CLINGY,
@@ -23,6 +28,10 @@ if TYPE_CHECKING:
 
 class TrayController:
     """系统托盘控制器"""
+
+    _SHOW_CONTEXT_MENU_MESSAGE = (
+        win32.WM_USER + 20 if win32 is not None else None
+    )
 
     def __init__(self, app: DesktopPet):
         self.app = app
@@ -384,7 +393,35 @@ class TrayController:
         """启动托盘图标"""
         icon_image = self._create_icon_image()
         self.icon = pystray.Icon("desktop_pet", icon_image, "远航星", self.build_menu())
+        if self._SHOW_CONTEXT_MENU_MESSAGE is not None:
+            handlers = getattr(self.icon, "_message_handlers", None)
+            if isinstance(handlers, dict):
+                handlers[self._SHOW_CONTEXT_MENU_MESSAGE] = self._show_context_menu
         self.icon.run_detached()
+
+    def _show_context_menu(self, wparam=0, lparam=0) -> None:
+        """在 pystray 消息线程中刷新并显示菜单。"""
+        icon = self.icon
+        if icon is None or win32 is None:
+            return
+        icon.menu = self.build_menu()
+        icon._on_notify(0, win32.WM_RBUTTONUP)
+
+    def show_context_menu(self) -> bool:
+        """在鼠标当前位置显示与托盘图标相同的原生菜单。"""
+        icon = self.icon
+        message = self._SHOW_CONTEXT_MENU_MESSAGE
+        if icon is None or not icon.visible or win32 is None or message is None:
+            return False
+
+        hwnd = getattr(icon, "_hwnd", None)
+        if not hwnd:
+            return False
+
+        try:
+            return bool(win32.PostMessage(hwnd, message, 0, 0))
+        except Exception:
+            return False
 
     def stop(self) -> None:
         """停止托盘图标"""
