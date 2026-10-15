@@ -26,6 +26,12 @@ build/
 dist/
 dist_package/
 
+# 内置 AI 上色模型权重（130MB，不入库；源码在 models/colorize/ 其余文件里）
+models/colorize/networks/generator.zip
+models/colorize/denoising/models/net_rgb.pth
+# 上色专用 venv（torch CPU 约 500MB）
+colorize_venv/
+
 *.log
 *.tmp
 *.bak

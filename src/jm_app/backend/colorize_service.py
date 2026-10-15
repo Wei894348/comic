@@ -1,7 +1,7 @@
 """AI 上色服务：manga-colorization-v2 模型，后台线程逐页处理本地漫画。
 
-模型权重位于模型目录（默认 C:\\Users\\86157\\manga_color\\mcv2\\networks，
-可被设置 colorize_model_dir 覆盖）。torch 环境由 colorize_python 指定的解释器提供。
+模型源码内置在项目 models/colorize/ 下（权重 generator.zip / net_rgb.pth 因体积
+不入库，见 .gitignore）。torch 环境优先用项目内置 venv，可被设置覆盖。
 """
 
 from __future__ import annotations
@@ -17,18 +17,37 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import QObject, QThread, Signal
 
 from ..backend.pdf_utils import IMAGE_SUFFIXES
-from ..backend.runtime_paths import app_data_dir
+from ..backend.runtime_paths import app_base_dir, app_data_dir
 
-DEFAULT_MODEL_DIR = r"C:\Users\86157\manga_color\mcv2"
-DEFAULT_PYTHON = r"C:\Users\86157\manga_color\venv\Scripts\python.exe"
+# 模型与上色依赖内置在项目的 models/colorize/ 下（源码随仓库，权重见 .gitignore 说明）
+PROJECT_MODEL_DIR = app_base_dir() / "models" / "colorize"
+
+
+def _bundled_python_candidates():
+    """内置解释器候选：上色专用 venv 优先（主 .venv 不带 torch）。"""
+    base = app_base_dir()
+    return [
+        base / "colorize_venv" / "Scripts" / "python.exe",
+        base / "models" / "colorize" / "venv" / "Scripts" / "python.exe",
+        base / ".venv" / "Scripts" / "python.exe",
+        base / "venv" / "Scripts" / "python.exe",
+    ]
+
+
+def bundled_python() -> Path:
+    for candidate in _bundled_python_candidates():
+        if candidate.is_file():
+            return candidate
+    return Path(sys.executable)
+
+
+DEFAULT_MODEL_DIR = str(PROJECT_MODEL_DIR)
+DEFAULT_PYTHON = str(bundled_python())
 
 _COLORIZE_JOB_SCRIPT = r'''
 import sys, os, json
 os.chdir(sys.argv[1])  # model dir, so networks/ and denoising/ resolve
 sys.path.insert(0, sys.argv[1])
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import cv2
 from colorizator import MangaColorizator
 
@@ -45,7 +64,12 @@ for name in files:
         continue
     if colorizator is None:
         colorizator = MangaColorizator("cpu")
-    img = plt.imread(os.path.join(src, name))
+    # cv2 读图（BGR），转成 colorizator 期望的 RGB float [0,1]
+    raw = cv2.imread(os.path.join(src, name), cv2.IMREAD_COLOR)
+    if raw is None:
+        print(json.dumps({"done": done, "total": len(files), "page": name, "error": "read failed"}), flush=True)
+        continue
+    img = cv2.cvtColor(raw, cv2.COLOR_BGR2RGB).astype("float32") / 255.0
     c = colorizator
     c.set_image(img, size=size, apply_denoise=denoise, denoise_sigma=sigma)
     out_img = c.colorize()

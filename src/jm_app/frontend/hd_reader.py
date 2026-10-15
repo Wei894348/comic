@@ -920,16 +920,18 @@ class HdMangaReaderWindow(QWidget):
         """请求上色当前本地章节；完成后由 colorize_result_ready 切换到上色版。"""
         if self._closed:
             return
-        if self.pdf_path is not None or not self.current_chapter_dir:
+        source_dir = Path(self.current_chapter_dir) if self.current_chapter_dir else None
+        if self.pdf_path is not None or source_dir is None:
             self.show_reader_toast("当前章节是在线或 PDF 内容，暂不支持上色", 2400)
             return
-        source_dir = Path(self.current_chapter_dir)
         if source_dir.name == "上色版":
             self.show_reader_toast("当前已经在看上色版", 2000)
             return
         title = self.current_chapter_title or self.windowTitle()
         self.colorize_action.setEnabled(False)
         self.status_label.setText("AI 上色中，完成后自动切换…")
+        if self.log_callback:
+            self.log_callback(f"请求上色：{title} <- {source_dir}")
         self.colorize_requested.emit(title, source_dir)
 
     def open_colorized_result(self, source_dir: Path) -> None:

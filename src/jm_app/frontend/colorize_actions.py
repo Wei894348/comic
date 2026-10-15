@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QMenu
 
 from ..backend.colorize_service import colorize_manager, colorize_settings_defaults
 from ..backend.pdf_utils import IMAGE_SUFFIXES
+from .hd_reader import HdMangaReaderWindow, collect_reader_images
 
 if TYPE_CHECKING:
     from .ui import MainWindow
@@ -21,10 +22,18 @@ def colorize_effective_settings(main: "MainWindow") -> Dict[str, object]:
     """合并默认值与设置页当前值。"""
     settings = colorize_settings_defaults()
     cached = getattr(main, "settings_cache", None)
+    legacy = {
+        r"C:\Users\86157\manga_color\mcv2",
+        r"C:\Users\86157\manga_color\venv\Scripts\python.exe",
+    }
     if isinstance(cached, dict):
         for key in settings:
             if key in cached:
-                settings[key] = cached[key]
+                value = cached[key]
+                # 旧版默认路径已迁移到项目内置位置，忽略缓存里的旧值
+                if isinstance(value, str) and value.strip() in legacy:
+                    continue
+                settings[key] = value
     if hasattr(main, "colorize_size_combo"):
         settings["colorize_size"] = int(main.colorize_size_combo.currentData() or 576)
         settings["colorize_denoise"] = bool(main.colorize_denoise_box.isChecked())
@@ -76,10 +85,14 @@ class ColorizeUIMixin:
         manager = colorize_manager()
 
         def on_requested(title: str, source_dir) -> None:
+            if self.log:
+                self.log(f"上色请求到达：{title} <- {source_dir}")
             settings = colorize_effective_settings(self)
             enqueued = manager.enqueue(title, Path(source_dir), settings)
             if enqueued:
                 reader.colorize_source_dir = Path(source_dir)
+                if self.log:
+                    self.log(f"上色任务已入队：{title}（模型={settings.get('colorize_model_dir')}，python={settings.get('colorize_python')}）")
             else:
                 reader.colorize_action.setEnabled(True)
                 reader.status_label.setText("")
@@ -104,7 +117,7 @@ class ColorizeUIMixin:
         manager.job_finished.connect(on_finished)
         manager.job_failed.connect(on_failed)
 
-    def request_colorize_history_index(self: "MainWindow", index: int) -> None:
+    def request_colorize_history_index(self: "MainWindow", index: int, open_when_done: bool = False) -> None:
         record = self.download_history[index] if 0 <= index < len(self.download_history) else {}
         if not record:
             return
@@ -115,8 +128,32 @@ class ColorizeUIMixin:
             return
         self.setup_colorize()
         settings = colorize_effective_settings(self)
-        if colorize_manager().enqueue(title, source_dir, settings):
-            self.show_floating_notice(f"已加入上色队列：{title}")
+        enqueued = colorize_manager().enqueue(title, source_dir, settings)
+        if not enqueued:
+            self.show_floating_notice(f"上色任务已在队列中：{title}")
+            return
+        if open_when_done:
+            pending = getattr(self, "_colorize_open_when_done", {})
+            pending[title] = source_dir
+            self._colorize_open_when_done = pending
+
+    def open_colorized_history(self: "MainWindow", title: str, source_dir) -> None:
+        """上色完成后自动打开上色版阅读。"""
+        colorized = Path(source_dir) / "上色版"
+        record = {"title": title, "path": str(colorized), "image_dir": str(colorized)}
+        dialog = HdMangaReaderWindow(f"漫画阅读（上色版） - {title}")
+        self.local_reader_dialogs.append(dialog)
+        dialog.destroyed.connect(lambda _=None, dialog=dialog: self.forget_local_reader_dialog(dialog))
+        try:
+            dialog.start_decode_image_paths(collect_reader_images(colorized))
+            dialog.showMaximized()
+            dialog.raise_()
+            dialog.activateWindow()
+            self.log(f"上色版阅读器已打开：{title}")
+        except Exception as exc:
+            self.forget_local_reader_dialog(dialog)
+            dialog.deleteLater()
+            self.show_toast(f"上色版打开失败：{exc}", 2400)
 
     def append_history_context_colorize_action(self: "MainWindow", menu: QMenu, index: int) -> None:
         record = self.download_history[index] if 0 <= index < len(self.download_history) else {}
@@ -126,6 +163,12 @@ class ColorizeUIMixin:
             action.setEnabled(False)
             action.setToolTip("没有可上色的图片目录")
         action.triggered.connect(lambda _=False, idx=index: self.request_colorize_history_index(idx))
+        read_action = menu.addAction("上色阅读")
+        if source_dir is None:
+            read_action.setEnabled(False)
+        read_action.triggered.connect(
+            lambda _=False, idx=index: self.request_colorize_history_index(idx, open_when_done=True)
+        )
 
     # ---- 进度显示 ----
 
@@ -142,7 +185,12 @@ class ColorizeUIMixin:
     def on_colorize_finished(self: "MainWindow", title: str, output_dir: str) -> None:
         self.log(f"上色完成：{title} → {output_dir}")
         self.refresh_local_downloads_if_visible()
-        self.show_floating_notice(f"上色完成：{title}")
+        pending = getattr(self, "_colorize_open_when_done", {})
+        source_dir = pending.pop(title, None)
+        if source_dir is not None:
+            self.open_colorized_history(title, source_dir)
+        else:
+            self.show_floating_notice(f"上色完成：{title}")
 
     def on_colorize_failed(self: "MainWindow", title: str, error: str) -> None:
         self.log(f"上色失败：{title}: {error}")
