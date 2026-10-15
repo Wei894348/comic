@@ -1,0 +1,145 @@
+"""工具函数模块"""
+
+import os
+import sys
+from pathlib import Path
+
+
+def desktop_pet_base() -> Path:
+    """Return the desktop_pet resource root in source and PyInstaller builds."""
+    source_base = Path(__file__).resolve().parent.parent
+    candidates: list[Path] = []
+
+    bundle_base = getattr(sys, "_MEIPASS", None)
+    if bundle_base:
+        bundle_base = Path(bundle_base)
+        candidates.extend([bundle_base / "desktop_pet", bundle_base])
+
+    if source_base.name == "desktop_pet":
+        candidates.append(source_base)
+    candidates.append(source_base / "desktop_pet")
+    candidates.append(source_base)
+
+    for candidate in candidates:
+        if (candidate / "assets").exists() or (candidate / "config").exists():
+            return candidate
+    return candidates[0]
+
+
+def resource_path(relative_path: str) -> str:
+    """获取打包后的资源绝对路径
+
+    支持 PyInstaller 打包后的环境和开发环境
+
+    Args:
+        relative_path: 相对路径
+
+    Returns:
+        绝对路径
+    """
+    relative = Path(relative_path)
+    resource_tail = relative
+    if relative.is_absolute():
+        parts = relative.parts
+        for marker in ("desktop_pet", "assets"):
+            if marker in parts:
+                resource_tail = Path(*parts[parts.index(marker) + (1 if marker == "desktop_pet" else 0):])
+                break
+
+    source_base = desktop_pet_base()
+    candidates = [relative] if relative.is_absolute() else []
+    candidates.append(source_base / resource_tail)
+
+    bundle_base = getattr(sys, "_MEIPASS", None)
+    if bundle_base:
+        bundle_base = Path(bundle_base)
+        candidates.extend(
+            [
+                bundle_base / "desktop_pet" / resource_tail,
+                bundle_base / resource_tail,
+            ]
+        )
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    return str(candidates[0])
+
+
+def get_version() -> str:
+    """自动获取当前版本
+
+    1. 优先读取 version.txt（打包后）
+    2. 回退到 git 标签
+    3. 默认为 "dev"
+
+    Returns:
+        版本号字符串
+    """
+    # 1. 优先读取 version.txt
+    try:
+        version_path = Path(resource_path("version.txt"))
+        if version_path.exists():
+            version = version_path.read_text(encoding="utf-8").strip()
+            if version:
+                return version
+    except (OSError, IOError):
+        pass
+
+    # 2. 尝试从 git 获取
+    try:
+        import subprocess
+
+        version = subprocess.check_output(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            cwd=Path(__file__).parent,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        if version:
+            return version
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+
+    return "dev"
+
+
+def normalize_version(v: str) -> list:
+    """标准化版本号用于比较
+
+    Args:
+        v: 版本号字符串
+
+    Returns:
+        版本号各部分组成的整数列表
+    """
+    v = v.lstrip("v")
+    if v == "dev" or not v:
+        return []
+    try:
+        return [int(p) for p in v.split(".") if p.isdigit()]
+    except ValueError:
+        return []
+
+
+def version_greater_than(v1: str, v2: str) -> bool:
+    """比较两个版本号
+
+    Args:
+        v1: 版本1
+        v2: 版本2
+
+    Returns:
+        v1 > v2 返回 True
+    """
+    parts1 = normalize_version(v1)
+    parts2 = normalize_version(v2)
+    if not parts1 or not parts2:
+        return False
+
+    max_len = max(len(parts1), len(parts2))
+    parts1 = parts1 + [0] * (max_len - len(parts1))
+    parts2 = parts2 + [0] * (max_len - len(parts2))
+
+    return parts1 > parts2

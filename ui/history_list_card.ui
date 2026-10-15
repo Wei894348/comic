@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>HistoryListCard</class>
+ <widget class="QFrame" name="historyCard">
+  <property name="objectName"><string>historyCard</string></property>
+  <property name="minimumSize"><size><width>0</width><height>148</height></size></property>
+  <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+  <layout class="QHBoxLayout" name="historyCardLayout">
+   <property name="leftMargin"><number>10</number></property>
+   <property name="topMargin"><number>9</number></property>
+   <property name="rightMargin"><number>10</number></property>
+   <property name="bottomMargin"><number>9</number></property>
+   <property name="spacing"><number>11</number></property>
+   <item>
+    <widget class="QLabel" name="historyCover">
+     <property name="minimumSize"><size><width>96</width><height>128</height></size></property>
+     <property name="maximumSize"><size><width>96</width><height>128</height></size></property>
+     <property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property>
+     <property name="text"><string>&#x5C01;&#x9762;</string></property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QVBoxLayout" name="historyInfoLayout">
+     <property name="leftMargin"><number>0</number></property>
+     <property name="topMargin"><number>0</number></property>
+     <property name="rightMargin"><number>0</number></property>
+     <property name="bottomMargin"><number>0</number></property>
+     <property name="spacing"><number>6</number></property>
+     <item><widget class="QLabel" name="historyTitle"/></item>
+     <item><widget class="QLabel" name="historyMeta"/></item>
+     <item><widget class="QLabel" name="historyFixedMeta"/></item>
+     <item><widget class="QLabel" name="historyPath"/></item>
+     <item>
+      <layout class="QHBoxLayout" name="historyActionsLayout">
+       <property name="spacing"><number>8</number></property>
+       <item><widget class="QLabel" name="historyBadge"><property name="minimumSize"><size><width>58</width><height>0</height></size></property><property name="maximumSize"><size><width>58</width><height>16777215</height></size></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property></widget></item>
+       <item><spacer name="historyActionsSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item>
+       <item><widget class="QPushButton" name="historyLocateButton"><property name="minimumSize"><size><width>58</width><height>0</height></size></property><property name="maximumSize"><size><width>58</width><height>16777215</height></size></property><property name="text"><string>&#x4F4D;&#x7F6E;</string></property></widget></item>
+       <item><widget class="QPushButton" name="historyReadButton"><property name="minimumSize"><size><width>58</width><height>0</height></size></property><property name="maximumSize"><size><width>58</width><height>16777215</height></size></property><property name="text"><string>&#x9605;&#x8BFB;</string></property></widget></item>
+      </layout>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

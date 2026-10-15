@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>CommentCard</class>
+ <widget class="QFrame" name="commentCard">
+  <property name="minimumSize"><size><width>0</width><height>112</height></size></property>
+  <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+  <property name="styleSheet"><string notr="true">
+QFrame#commentCard{background:#ffffff;border:1px solid #e4e9f0;border-radius:7px;}
+QFrame#commentCard:hover{border-color:#cbd7e8;background:#ffffff;}
+QLabel#commentAlbumCoverLabel{background:#edf1f6;color:#8a96a7;border:0;border-radius:5px;font-size:11px;}
+QLabel#commentAvatarLabel{background:#edf3f5;color:#527080;border:1px solid #d8e2e7;border-radius:22px;font-size:17px;font-weight:800;}
+QLabel#commentIndexLabel,QLabel#commentDateLabel,QLabel#commentIdLabel{color:#919cad;font-size:11px;}
+QLabel#commentNameLabel{color:#243143;font-size:13px;font-weight:800;}
+QLabel#commentLevelLabel,QLabel#commentTitleLabel{color:#597fd3;background:#eef4ff;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:800;}
+QLabel#commentContentLabel{color:#344256;font-size:13px;}
+QLabel#commentReplyPreviewLabel{color:#7a8799;background:#f6f8fb;border-radius:7px;padding:5px 8px;font-size:11px;}
+QLabel#commentLikeLabel{color:#73839b;font-size:12px;}
+QPushButton#commentReplyButton{border:0;background:transparent;color:#73839b;padding:2px 5px;font-weight:700;}
+QPushButton#commentReplyButton:hover{color:#4f7fe7;background:#f1f5ff;border-radius:5px;}
+QPushButton#commentAlbumButton{border:0;background:transparent;color:#263347;padding:0;text-align:left;font-size:13px;font-weight:900;}
+QPushButton#commentAlbumButton:hover{color:#4f7fe7;text-decoration:underline;}
+  </string></property>
+  <layout class="QHBoxLayout" name="commentCardLayout">
+   <property name="leftMargin"><number>14</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>14</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>12</number></property>
+   <item><layout class="QVBoxLayout" name="commentMediaLayout"><property name="spacing"><number>5</number></property><item><widget class="QLabel" name="commentAlbumCoverLabel"><property name="minimumSize"><size><width>58</width><height>78</height></size></property><property name="maximumSize"><size><width>58</width><height>78</height></size></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string>封面</string></property></widget></item><item><widget class="QLabel" name="commentAvatarLabel"><property name="minimumSize"><size><width>44</width><height>44</height></size></property><property name="maximumSize"><size><width>44</width><height>44</height></size></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string>U</string></property></widget></item><item><widget class="QLabel" name="commentIndexLabel"><property name="minimumSize"><size><width>44</width><height>16</height></size></property><property name="maximumSize"><size><width>44</width><height>16</height></size></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string>#1</string></property></widget></item><item><spacer name="commentMediaSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item></layout></item>
+   <item><layout class="QVBoxLayout" name="commentBodyLayout"><property name="spacing"><number>5</number></property>
+    <item><layout class="QHBoxLayout" name="commentAlbumRow"><property name="spacing"><number>8</number></property><item><widget class="QPushButton" name="commentAlbumButton"><property name="cursor"><enum>Qt::CursorShape::PointingHandCursor</enum></property><property name="text"><string>漫画标题</string></property></widget></item><item><widget class="QLabel" name="commentDateLabel"><property name="text"><string>-</string></property></widget></item><item><spacer name="commentAlbumSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item></layout></item>
+    <item><layout class="QHBoxLayout" name="commentNameRow"><property name="spacing"><number>7</number></property><item><widget class="QLabel" name="commentNameLabel"><property name="text"><string>User</string></property></widget></item><item><widget class="QLabel" name="commentLevelLabel"><property name="text"><string>LV</string></property></widget></item><item><widget class="QLabel" name="commentTitleLabel"><property name="text"><string/></property></widget></item><item><spacer name="commentNameSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item><item><widget class="QLabel" name="commentIdLabel"/></item></layout></item>
+    <item><widget class="QLabel" name="commentContentLabel"><property name="minimumSize"><size><width>0</width><height>28</height></size></property><property name="wordWrap"><bool>true</bool></property><property name="alignment"><set>Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignTop</set></property><property name="text"><string>Comment</string></property></widget></item>
+    <item><widget class="QLabel" name="commentReplyPreviewLabel"><property name="wordWrap"><bool>true</bool></property><property name="text"><string/></property></widget></item>
+    <item><spacer name="commentBodySpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item>
+    <item><layout class="QHBoxLayout" name="commentActionRow"><property name="spacing"><number>10</number></property><item><widget class="QLabel" name="commentLikeLabel"><property name="text"><string>♡ 0</string></property></widget></item><item><widget class="QPushButton" name="commentReplyButton"><property name="cursor"><enum>Qt::CursorShape::PointingHandCursor</enum></property><property name="text"><string>回复 (0)</string></property></widget></item><item><spacer name="commentActionSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item></layout></item>
+   </layout></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

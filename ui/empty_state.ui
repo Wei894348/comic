@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>EmptyState</class>
+ <widget class="QLabel" name="emptyStateLabel">
+  <property name="text"><string></string></property>
+  <property name="wordWrap"><bool>true</bool></property>
+  <property name="alignment"><set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set></property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

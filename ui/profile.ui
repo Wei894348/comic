@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ProfilePage</class>
+ <widget class="QWidget" name="ProfilePage">
+  <layout class="QVBoxLayout" name="profileRootLayout">
+   <property name="leftMargin"><number>0</number></property>
+   <property name="topMargin"><number>0</number></property>
+   <property name="rightMargin"><number>0</number></property>
+   <property name="bottomMargin"><number>0</number></property>
+   <property name="spacing"><number>10</number></property>
+   <item>
+    <widget class="QFrame" name="profileNavFrame">
+     <property name="minimumSize"><size><width>0</width><height>58</height></size></property>
+     <property name="maximumSize"><size><width>16777215</width><height>58</height></size></property>
+     <layout class="QHBoxLayout" name="profileNavLayout">
+      <property name="leftMargin"><number>16</number></property>
+      <property name="topMargin"><number>0</number></property>
+      <property name="rightMargin"><number>16</number></property>
+      <property name="bottomMargin"><number>0</number></property>
+      <property name="spacing"><number>8</number></property>
+      <item><widget class="QPushButton" name="profileInfoNavButton"><property name="text"><string>个人资讯</string></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item>
+      <item><widget class="QPushButton" name="profileInboxNavButton"><property name="text"><string>信箱</string></property><property name="checkable"><bool>true</bool></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item>
+      <item><widget class="QPushButton" name="profileFavoriteNavButton"><property name="text"><string>漫画收藏</string></property><property name="checkable"><bool>true</bool></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item>
+      <item><widget class="QPushButton" name="profileHistoryNavButton"><property name="text"><string>漫画观看记录</string></property><property name="checkable"><bool>true</bool></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item>
+      <item><spacer name="profileNavSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Expanding</enum></property></spacer></item>
+      <item><widget class="QPushButton" name="profileLogoutButton"><property name="text"><string>登出</string></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QStackedWidget" name="profileContentStack">
+     <property name="currentIndex"><number>0</number></property>
+     <widget class="QWidget" name="profileInfoPage">
+      <layout class="QVBoxLayout" name="profileInfoPageLayout">
+       <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+       <item>
+        <widget class="QScrollArea" name="profileRootScroll">
+         <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+         <property name="widgetResizable"><bool>true</bool></property>
+         <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+         <widget class="QWidget" name="profileRootContent">
+          <layout class="QHBoxLayout" name="profileContentLayout">
+           <property name="leftMargin"><number>8</number></property><property name="topMargin"><number>4</number></property><property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>12</number></property>
+           <item>
+            <widget class="QFrame" name="profileTaskCard">
+             <property name="minimumSize"><size><width>250</width><height>0</height></size></property>
+             <property name="maximumSize"><size><width>280</width><height>16777215</height></size></property>
+             <layout class="QVBoxLayout" name="profileTaskLayout">
+              <property name="leftMargin"><number>16</number></property><property name="topMargin"><number>16</number></property><property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>16</number></property><property name="spacing"><number>11</number></property>
+              <item>
+               <layout class="QHBoxLayout" name="profileIdentityLayout">
+                <property name="spacing"><number>10</number></property>
+                <item><widget class="QLabel" name="profileAvatarLabel"><property name="minimumSize"><size><width>58</width><height>58</height></size></property><property name="maximumSize"><size><width>58</width><height>58</height></size></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="text"><string>U</string></property></widget></item>
+                <item>
+                 <layout class="QVBoxLayout" name="profileNameLayout">
+                  <property name="spacing"><number>2</number></property>
+                  <item><widget class="QLabel" name="profileNameLabel"><property name="text"><string>未登录</string></property></widget></item>
+                  <item><widget class="QLabel" name="profileUserLabel"><property name="text"><string>@guest</string></property></widget></item>
+                  <item><widget class="QLabel" name="profileUidLabel"><property name="text"><string>UID -</string></property></widget></item>
+                 </layout>
+                </item>
+               </layout>
+              </item>
+              <item><widget class="QFrame" name="profileTaskDivider"><property name="frameShape"><enum>QFrame::HLine</enum></property></widget></item>
+              <item>
+               <layout class="QHBoxLayout" name="profileTaskHeaderLayout">
+                <item><widget class="QLabel" name="profileTaskTitle"><property name="text"><string>个人任务</string></property></widget></item>
+                <item><spacer name="profileTaskHeaderSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+                <item><widget class="QLabel" name="profileSignLabel"><property name="text"><string>签到状态：-</string></property></widget></item>
+               </layout>
+              </item>
+              <item><widget class="QLabel" name="profileLoginTaskLabel"><property name="text"><string>每日登入</string></property></widget></item>
+              <item><layout class="QHBoxLayout" name="profileLoginTaskRow"><item><widget class="QProgressBar" name="profileLoginTaskBar"><property name="maximum"><number>1</number></property><property name="value"><number>0</number></property><property name="textVisible"><bool>false</bool></property></widget></item><item><widget class="QLabel" name="profileLoginTaskValue"><property name="text"><string>0/1</string></property></widget></item></layout></item>
+              <item><widget class="QLabel" name="profileDailyTaskLabel"><property name="text"><string>每日签到</string></property></widget></item>
+              <item><layout class="QHBoxLayout" name="profileDailyTaskRow"><item><widget class="QProgressBar" name="profileDailyTaskBar"><property name="maximum"><number>1</number></property><property name="value"><number>0</number></property><property name="textVisible"><bool>false</bool></property></widget></item><item><widget class="QLabel" name="profileDailyTaskValue"><property name="text"><string>0/1</string></property></widget></item></layout></item>
+              <item><widget class="QLabel" name="profileFavoriteCountLabel"><property name="text"><string>漫画收藏额度</string></property></widget></item>
+              <item><layout class="QHBoxLayout" name="profileFavoriteTaskRow"><item><widget class="QProgressBar" name="profileFavoriteTaskBar"><property name="maximum"><number>100</number></property><property name="value"><number>0</number></property><property name="textVisible"><bool>false</bool></property></widget></item><item><widget class="QLabel" name="profileFavoriteTaskValue"><property name="text"><string>-/-</string></property></widget></item></layout></item>
+              <item><widget class="QLabel" name="profileExpLabel"><property name="text"><string>等级经验</string></property></widget></item>
+              <item><widget class="QProgressBar" name="profileExpBar"><property name="maximum"><number>100</number></property><property name="value"><number>0</number></property><property name="textVisible"><bool>false</bool></property></widget></item>
+              <item><spacer name="profileTaskBottomSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Expanding</enum></property></spacer></item>
+              <item><widget class="QLabel" name="profileStatusLabel"><property name="text"><string/></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <layout class="QVBoxLayout" name="profileCenterLayout">
+             <property name="spacing"><number>12</number></property>
+             <item>
+              <widget class="QFrame" name="profileActivityCard">
+               <property name="minimumSize"><size><width>0</width><height>76</height></size></property>
+               <property name="maximumSize"><size><width>16777215</width><height>76</height></size></property>
+               <layout class="QHBoxLayout" name="profileActivityLayout">
+                <property name="leftMargin"><number>16</number></property><property name="rightMargin"><number>16</number></property>
+                <item><widget class="QLabel" name="profileActivityTitle"><property name="text"><string>动态墙</string></property></widget></item>
+                <item><spacer name="profileActivitySpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+                <item><widget class="QLabel" name="profileActivityText"><property name="text"><string>账户动态会在这里显示</string></property></widget></item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QFrame" name="profileFavoriteCard">
+               <layout class="QVBoxLayout" name="profileFavoriteCardLayout">
+                <property name="leftMargin"><number>14</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>14</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>8</number></property>
+                <item><layout class="QHBoxLayout" name="profileFavoriteTitleLayout"><item><widget class="QLabel" name="profileFavoriteTitle"><property name="text"><string>收藏漫画</string></property></widget></item><item><spacer name="profileFavoriteTitleSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item><item><widget class="QLabel" name="profileFavoriteSummaryLabel"><property name="text"><string>可收藏数量：-/-</string></property></widget></item><item><widget class="QPushButton" name="profileFavoriteMoreButton"><property name="text"><string>更多  ›</string></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item></layout></item>
+                <item><widget class="QScrollArea" name="profileFavoriteScroll"><property name="minimumSize"><size><width>0</width><height>222</height></size></property><property name="maximumSize"><size><width>16777215</width><height>222</height></size></property><property name="frameShape"><enum>QFrame::NoFrame</enum></property><property name="widgetResizable"><bool>true</bool></property><property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property><widget class="QWidget" name="profileFavoriteStripWidget"><layout class="QHBoxLayout" name="profileFavoriteStrip"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>10</number></property></layout></widget></widget></item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QFrame" name="profileHistoryCard">
+               <layout class="QVBoxLayout" name="profileHistoryCardLayout">
+                <property name="leftMargin"><number>14</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>14</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>8</number></property>
+                <item><layout class="QHBoxLayout" name="profileHistoryTitleLayout"><item><widget class="QLabel" name="profileHistoryTitle"><property name="text"><string>漫画观看记录</string></property></widget></item><item><spacer name="profileHistoryTitleSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item><item><widget class="QPushButton" name="profileHistoryMoreButton"><property name="text"><string>更多  ›</string></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item></layout></item>
+                <item><widget class="QScrollArea" name="profileHistoryScroll"><property name="minimumSize"><size><width>0</width><height>222</height></size></property><property name="maximumSize"><size><width>16777215</width><height>222</height></size></property><property name="frameShape"><enum>QFrame::NoFrame</enum></property><property name="widgetResizable"><bool>true</bool></property><property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property><widget class="QWidget" name="profileHistoryStripWidget"><layout class="QHBoxLayout" name="profileHistoryStrip"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>10</number></property></layout></widget></widget></item>
+               </layout>
+              </widget>
+             </item>
+             <item><spacer name="profileCenterBottomSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Expanding</enum></property></spacer></item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QFrame" name="profileCommunityCard">
+             <property name="minimumSize"><size><width>190</width><height>0</height></size></property><property name="maximumSize"><size><width>220</width><height>16777215</height></size></property>
+             <layout class="QVBoxLayout" name="profileCommunityLayout">
+              <property name="leftMargin"><number>16</number></property><property name="topMargin"><number>16</number></property><property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>16</number></property><property name="spacing"><number>10</number></property>
+              <item><widget class="QLabel" name="profileCommunityTitle"><property name="text"><string>账户信息</string></property></widget></item>
+              <item><widget class="QFrame" name="profileCommunityDivider"><property name="frameShape"><enum>QFrame::HLine</enum></property></widget></item>
+              <item><widget class="QLabel" name="profileTitleCaption"><property name="text"><string>称号</string></property></widget></item>
+              <item><widget class="QLabel" name="profileTitleLabel"><property name="text"><string>-</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+              <item><widget class="QLabel" name="profileLevelCaption"><property name="text"><string>等级</string></property></widget></item>
+              <item><widget class="QLabel" name="profileLevelLabel"><property name="text"><string>LV -</string></property></widget></item>
+              <item><widget class="QLabel" name="profileFavoriteCaption"><property name="text"><string>收藏容量</string></property></widget></item>
+              <item><widget class="QLabel" name="profileFavoriteLabel"><property name="text"><string>-/-</string></property></widget></item>
+              <item><widget class="QLabel" name="profileCoinCaption"><property name="text"><string>JCoin</string></property></widget></item>
+              <item><widget class="QLabel" name="profileCoinLabel"><property name="text"><string>-</string></property></widget></item>
+              <item><spacer name="profileCommunitySpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Expanding</enum></property></spacer></item>
+              <item><widget class="QPushButton" name="profileWebButton"><property name="text"><string>打开网页版账户中心</string></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item>
+             </layout>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="profileInboxPage">
+      <layout class="QVBoxLayout" name="profileInboxPageLayout">
+       <property name="leftMargin"><number>24</number></property><property name="topMargin"><number>24</number></property><property name="rightMargin"><number>24</number></property><property name="bottomMargin"><number>24</number></property>
+       <item><spacer name="profileInboxTopSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Expanding</enum></property></spacer></item>
+       <item><widget class="QFrame" name="profileInboxCard"><property name="minimumSize"><size><width>0</width><height>260</height></size></property><property name="maximumSize"><size><width>680</width><height>260</height></size></property><layout class="QVBoxLayout" name="profileInboxLayout"><property name="leftMargin"><number>32</number></property><property name="topMargin"><number>28</number></property><property name="rightMargin"><number>32</number></property><property name="bottomMargin"><number>28</number></property><property name="spacing"><number>12</number></property><item><widget class="QLabel" name="profileInboxTitle"><property name="text"><string>信箱</string></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item><item><widget class="QLabel" name="profileInboxIcon"><property name="text"><string>✉</string></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item><item><widget class="QLabel" name="profileInboxMessage"><property name="text"><string>当前 App API 暂未提供站内信列表，可前往网页版账户中心查看。</string></property><property name="wordWrap"><bool>true</bool></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item><item><widget class="QPushButton" name="profileInboxWebButton"><property name="text"><string>打开网页版账户中心</string></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item></layout></widget></item>
+       <item><spacer name="profileInboxBottomSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Expanding</enum></property></spacer></item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="profileFavoritePage">
+      <layout class="QVBoxLayout" name="profileFavoritePageLayout">
+       <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>10</number></property>
+       <item><layout class="QHBoxLayout" name="profileFavoritePageHeader"><item><widget class="QLabel" name="profileFavoritePageTitle"><property name="text"><string>漫画收藏</string></property></widget></item><item><spacer name="profileFavoritePageHeaderSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item></layout></item>
+       <item><widget class="QScrollArea" name="profileFavoritePageScroll"><property name="frameShape"><enum>QFrame::NoFrame</enum></property><property name="widgetResizable"><bool>true</bool></property><property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property><widget class="QWidget" name="profileFavoritePageContent"><layout class="QHBoxLayout" name="profileFavoritePageStrip"><property name="leftMargin"><number>8</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>8</number></property><property name="spacing"><number>10</number></property></layout></widget></widget></item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="profileHistoryPage">
+      <layout class="QVBoxLayout" name="profileHistoryPageLayout">
+       <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>10</number></property>
+       <item><layout class="QHBoxLayout" name="profileHistoryPageHeader"><item><widget class="QLabel" name="profileHistoryPageTitle"><property name="text"><string>漫画观看记录</string></property></widget></item><item><spacer name="profileHistoryPageHeaderSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item></layout></item>
+       <item><widget class="QScrollArea" name="profileHistoryPageScroll"><property name="frameShape"><enum>QFrame::NoFrame</enum></property><property name="widgetResizable"><bool>true</bool></property><property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property><widget class="QWidget" name="profileHistoryPageContent"><layout class="QHBoxLayout" name="profileHistoryPageStrip"><property name="leftMargin"><number>8</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>8</number></property><property name="spacing"><number>10</number></property></layout></widget></widget></item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

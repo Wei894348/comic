@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>WeeklyPanel</class>
+ <widget class="QFrame" name="weeklyPanel">
+  <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+  <layout class="QVBoxLayout" name="weeklyRootLayout">
+   <property name="leftMargin"><number>16</number></property>
+   <property name="topMargin"><number>12</number></property>
+   <property name="rightMargin"><number>16</number></property>
+   <property name="bottomMargin"><number>12</number></property>
+   <property name="spacing"><number>10</number></property>
+   <item>
+    <widget class="QFrame" name="weeklyToolbar">
+     <property name="minimumSize"><size><width>0</width><height>76</height></size></property>
+     <property name="maximumSize"><size><width>16777215</width><height>76</height></size></property>
+     <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+     <layout class="QHBoxLayout" name="weeklyToolbarLayout">
+      <property name="leftMargin"><number>12</number></property>
+      <property name="topMargin"><number>10</number></property>
+      <property name="rightMargin"><number>12</number></property>
+      <property name="bottomMargin"><number>10</number></property>
+      <property name="spacing"><number>8</number></property>
+      <item><widget class="QLabel" name="weeklyPeriodIcon"><property name="minimumSize"><size><width>34</width><height>34</height></size></property><property name="maximumSize"><size><width>34</width><height>34</height></size></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string/></property></widget></item>
+      <item><widget class="QLabel" name="weeklyPeriodCaption"><property name="text"><string>推荐期数</string></property></widget></item>
+      <item><widget class="QComboBox" name="weeklyPeriodCombo"><property name="minimumSize"><size><width>210</width><height>46</height></size></property><property name="maximumSize"><size><width>520</width><height>46</height></size></property><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>1</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="sizeAdjustPolicy"><enum>QComboBox::SizeAdjustPolicy::AdjustToMinimumContentsLengthWithIcon</enum></property><property name="minimumContentsLength"><number>20</number></property></widget></item>
+      <item><widget class="QLabel" name="weeklyUpdateIcon"><property name="minimumSize"><size><width>34</width><height>34</height></size></property><property name="maximumSize"><size><width>34</width><height>34</height></size></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string/></property></widget></item>
+      <item><widget class="QLabel" name="weeklyUpdateHint"><property name="text"><string>每周五 18:00 更新</string></property></widget></item>
+      <item><spacer name="weeklyToolbarSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item>
+      <item><widget class="QPushButton" name="weeklyRefreshButton"><property name="minimumSize"><size><width>104</width><height>44</height></size></property><property name="maximumSize"><size><width>120</width><height>44</height></size></property><property name="text"><string>刷新</string></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTabWidget" name="weeklyTabs">
+     <property name="currentIndex"><number>0</number></property>
+     <widget class="QWidget" name="weeklyMangaTab">
+      <attribute name="title"><string>日漫</string></attribute>
+      <layout class="QVBoxLayout" name="weeklyMangaLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>6</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property></layout>
+     </widget>
+     <widget class="QWidget" name="weeklyHanmanTab">
+      <attribute name="title"><string>韩漫</string></attribute>
+      <layout class="QVBoxLayout" name="weeklyHanmanLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>6</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property></layout>
+     </widget>
+     <widget class="QWidget" name="weeklyAnotherTab">
+      <attribute name="title"><string>其他</string></attribute>
+      <layout class="QVBoxLayout" name="weeklyAnotherLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>6</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property></layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="weeklyLoadingFrame">
+     <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+     <layout class="QHBoxLayout" name="weeklyLoadingLayout">
+      <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>2</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>2</number></property><property name="spacing"><number>8</number></property>
+      <item><spacer name="weeklyLoadingLeftSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property></spacer></item>
+      <item><widget class="QLabel" name="weeklyLoadingArt"><property name="minimumSize"><size><width>80</width><height>64</height></size></property><property name="maximumSize"><size><width>80</width><height>64</height></size></property><property name="text"><string/></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property></widget></item>
+      <item><widget class="QLabel" name="weeklyLoadingText"><property name="text"><string>正在加载每周推荐</string></property></widget></item>
+      <item><spacer name="weeklyLoadingRightSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property></spacer></item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

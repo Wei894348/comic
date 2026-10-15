@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>HistoryDragGhost</class>
+ <widget class="QLabel" name="historyDragGhost">
+  <property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property>
+  <property name="text"><string></string></property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

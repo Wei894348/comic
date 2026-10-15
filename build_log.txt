@@ -1,0 +1,307 @@
+393 INFO: PyInstaller: 6.22.2, contrib hooks: 2026.7
+393 INFO: Python: 3.12.13
+436 INFO: Platform: Windows-11-10.0.26200-SP0
+436 INFO: Python environment: C:\Users\86157\comic18_venv
+473 INFO: Module search paths (PYTHONPATH):
+['F:\\project\\comic18',
+ 'F:\\Softstore\\WorkBuddy\\resources\\app.asar.unpacked\\cli\\vendor\\shim',
+ 'D:\\python312\\cpython-3.12.13-windows-x86_64-none\\python312.zip',
+ 'D:\\python312\\cpython-3.12.13-windows-x86_64-none\\DLLs',
+ 'D:\\python312\\cpython-3.12.13-windows-x86_64-none\\Lib',
+ 'D:\\python312\\cpython-3.12.13-windows-x86_64-none',
+ 'C:\\Users\\86157\\comic18_venv',
+ 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages',
+ 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\win32',
+ 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\win32\\lib',
+ 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\pythonwin',
+ 'F:\\project\\comic18',
+ 'F:\\project\\comic18\\src',
+ 'F:\\project\\comic18\\src\\desktop_pet']
+pygame 2.6.1 (SDL 2.28.4, Python 3.12.13)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+1773 INFO: Appending 'datas' from .spec
+1782 INFO: checking Analysis
+1782 INFO: Building Analysis because Analysis-00.toc is non existent
+1782 INFO: Looking for Python shared library...
+1782 INFO: Using Python shared library: D:\python312\cpython-3.12.13-windows-x86_64-none\python312.dll
+1782 INFO: Running Analysis Analysis-00.toc
+1782 INFO: Target bytecode optimization level: 0
+1782 INFO: Initializing module dependency graph...
+1784 INFO: Initializing module graph hook caches...
+1808 INFO: Analyzing modules for base_library.zip ...
+5762 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+7496 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+9720 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+11532 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+12236 INFO: Caching module dependency graph...
+12331 INFO: Analyzing F:\project\comic18\run.py
+12356 INFO: Processing standard module hook 'hook-PySide6.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+13268 INFO: Processing standard module hook 'hook-shiboken6.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+13668 INFO: Processing standard module hook 'hook-PySide6.QtNetwork.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+17758 INFO: Processing standard module hook 'hook-PySide6.QtCore.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+20250 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+20259 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+20267 INFO: TclTkInfo: initializing cached Tcl/Tk info...
+21374 INFO: Processing standard module hook 'hook-_tkinter.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+21729 INFO: Processing standard module hook 'hook-urllib3.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+22055 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+22058 INFO: SetuptoolsInfo: initializing cached setuptools info...
+23705 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+23720 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+23796 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+23801 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+23886 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+23899 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+23901 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco'!
+23923 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+23925 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.more_itertools'!
+24246 INFO: Processing standard module hook 'hook-_osx_support.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+24258 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+24794 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+24949 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+26085 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+26543 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+26547 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+27889 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+27890 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+28757 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+28759 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+29422 INFO: Processing standard module hook 'hook-certifi.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+29497 INFO: Processing standard module hook 'hook-charset_normalizer.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+29740 INFO: Processing standard module hook 'hook-cryptography.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+34268 INFO: hook-cryptography: cryptography does not seem to be using dynamically linked OpenSSL.
+34941 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+35228 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+36626 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+37100 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+37773 INFO: Processing standard module hook 'hook-pygame.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\pygame\\__pyinstaller'
+39591 INFO: Processing standard module hook 'hook-pydantic.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+41574 INFO: Processing standard module hook 'hook-rich.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+43915 INFO: Processing standard module hook 'hook-pygments.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+51157 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+51701 INFO: Processing standard module hook 'hook-zoneinfo.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+56094 INFO: Processing standard module hook 'hook-pystray.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+57330 INFO: Processing pre-safe-import-module hook 'hook-six.moves.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+57993 INFO: Processing pre-safe-import-module hook 'hook-gi.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+59409 INFO: Processing standard module hook 'hook-PySide6.QtGui.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+77025 INFO: Processing standard module hook 'hook-PySide6.QtWidgets.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+82223 INFO: Processing standard module hook 'hook-PySide6.QtUiTools.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+84970 INFO: Processing standard module hook 'hook-sqlite3.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+86617 INFO: Processing standard module hook 'hook-Crypto.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+90949 INFO: Processing standard module hook 'hook-pycparser.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+93881 INFO: Processing standard module hook 'hook-pypdfium2.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+93906 INFO: Processing standard module hook 'hook-pypdfium2_raw.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+94772 INFO: Processing standard module hook 'hook-PySide6.QtWebEngineCore.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+98591 INFO: Processing standard module hook 'hook-PySide6.QtWebChannel.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+101296 INFO: Processing standard module hook 'hook-PySide6.QtWebEngineWidgets.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+104592 INFO: Processing standard module hook 'hook-PySide6.QtPrintSupport.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+107375 INFO: Analyzing hidden import 'PySide6.QtMultimedia'
+107545 INFO: Processing standard module hook 'hook-PySide6.QtMultimedia.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+110149 INFO: Analyzing hidden import 'PySide6.QtMultimediaWidgets'
+110155 INFO: Processing standard module hook 'hook-PySide6.QtMultimediaWidgets.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+111928 INFO: Analyzing hidden import 'PySide6.QtSvg'
+111951 INFO: Processing standard module hook 'hook-PySide6.QtSvg.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+113678 INFO: Analyzing hidden import 'PySide6.QtSvgWidgets'
+113689 INFO: Processing standard module hook 'hook-PySide6.QtSvgWidgets.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+115319 INFO: Analyzing hidden import 'PySide6.QtXml'
+115387 INFO: Processing standard module hook 'hook-PySide6.QtXml.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+116784 INFO: Analyzing hidden import 'bs4'
+117419 INFO: Processing standard module hook 'hook-lxml.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+122001 INFO: Processing standard module hook 'hook-lxml.etree.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+122007 INFO: Analyzing hidden import 'script.run_tests'
+122023 INFO: Analyzing hidden import 'src.convert_icon'
+122025 INFO: Analyzing hidden import 'src.net'
+122033 INFO: Processing module hooks (post-graph stage)...
+122265 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+123067 INFO: Processing standard module hook 'hook-lxml.isoschematron.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+123192 WARNING: Hidden import "pycparser.lextab" not found!
+123193 WARNING: Hidden import "pycparser.yacctab" not found!
+123738 WARNING: Hidden import "tzdata" not found!
+124228 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+128623 INFO: Processing standard module hook 'hook-PySide6.QtOpenGLWidgets.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+130463 INFO: Processing standard module hook 'hook-PySide6.QtQuick.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+136248 INFO: Processing standard module hook 'hook-PySide6.QtOpenGL.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+141742 INFO: Processing standard module hook 'hook-PySide6.QtQml.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+149038 WARNING: QtLibraryInfo(PySide6): QML plugin binary 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\qml\\Qt\\labs\\assetdownloader\\qmlassetdownloaderprivateplugin.dll' does not exist!
+190615 INFO: Processing standard module hook 'hook-PySide6.QtPositioning.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+193196 INFO: Processing standard module hook 'hook-PySide6.QtQuickWidgets.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+195091 INFO: Processing standard module hook 'hook-_tkinter.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+195094 INFO: Processing standard module hook 'hook-lxml.objectify.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+195189 INFO: Performing binary vs. data reclassification (3942 entries)
+197160 INFO: Looking for ctypes DLLs
+197257 WARNING: Library msvcrt required via ctypes not found
+197399 INFO: Analyzing run-time hooks ...
+197418 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+197424 INFO: Including run-time hook 'pyi_rth__tkinter.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+197428 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+197433 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+197439 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+197444 INFO: Including run-time hook 'pyi_rth_cryptography_openssl.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+197448 INFO: Including run-time hook 'pyi_rth_pyside6.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+197453 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+197457 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PyInstaller\\hooks'
+197781 INFO: Creating base_library.zip...
+197820 INFO: Looking for dynamic libraries
+pygame 2.6.1 (SDL 2.28.4, Python 3.12.13)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+203863 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\shiboken6', 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\pygame', 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\curl_cffi.libs']
+203863 INFO: Extra DLL search directories (PATH): ['C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6']
+212642 WARNING: Library not found: could not resolve 'bcrypt.dll', dependency of 'D:\\python312\\cpython-3.12.13-windows-x86_64-none\\python312.dll'.
+212656 WARNING: Library not found: could not resolve 'VERSION.dll', dependency of 'D:\\python312\\cpython-3.12.13-windows-x86_64-none\\python312.dll'.
+212658 WARNING: Library not found: could not resolve 'WINMM.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\pygame\\SDL2_mixer.dll'.
+212660 WARNING: Library not found: could not resolve 'WINMM.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\pygame\\portmidi.dll'.
+212662 WARNING: Library not found: could not resolve 'SETUPAPI.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\pygame\\SDL2.dll'.
+212665 WARNING: Library not found: could not resolve 'IMM32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\pygame\\SDL2.dll'.
+212667 WARNING: Library not found: could not resolve 'WINMM.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\pygame\\SDL2.dll'.
+212668 WARNING: Library not found: could not resolve 'VERSION.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\pygame\\SDL2.dll'.
+212670 WARNING: Library not found: could not resolve 'USP10.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\pygame\\SDL2_ttf.dll'.
+212933 WARNING: Library not found: could not resolve 'UxTheme.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\qml\\QtQuick\\NativeStyle\\qtquickcontrols2nativestyleplugin.dll'.
+213082 WARNING: Library not found: could not resolve 'imagehlp.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\opengl32sw.dll'.
+213088 WARNING: Library not found: could not resolve 'ntdll.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\QtWebEngineProcess.exe'.
+213094 WARNING: Library not found: could not resolve 'USERENV.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\QtWebEngineProcess.exe'.
+213094 WARNING: Library not found: could not resolve 'WINMM.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\QtWebEngineProcess.exe'.
+213096 WARNING: Library not found: could not resolve 'SHLWAPI.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\QtWebEngineProcess.exe'.
+213123 WARNING: Library not found: could not resolve 'UxTheme.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\styles\\qmodernwindowsstyle.dll'.
+213124 WARNING: Library not found: could not resolve 'dwmapi.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\styles\\qmodernwindowsstyle.dll'.
+213146 WARNING: Library not found: could not resolve 'ncrypt.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\tls\\qschannelbackend.dll'.
+213149 WARNING: Library not found: could not resolve 'Secur32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\tls\\qschannelbackend.dll'.
+213152 WARNING: Library not found: could not resolve 'bcrypt.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\tls\\qschannelbackend.dll'.
+213153 WARNING: Library not found: could not resolve 'MF.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\ffmpegmediaplugin.dll'.
+213157 WARNING: Library not found: could not resolve 'd3d11.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\ffmpegmediaplugin.dll'.
+213159 WARNING: Library not found: could not resolve 'MFReadWrite.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\ffmpegmediaplugin.dll'.
+213160 WARNING: Library not found: could not resolve 'dxva2.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\ffmpegmediaplugin.dll'.
+213162 WARNING: Library not found: could not resolve 'dxgi.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\ffmpegmediaplugin.dll'.
+213176 WARNING: Library not found: could not resolve 'MFPlat.DLL', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\ffmpegmediaplugin.dll'.
+213182 WARNING: Library not found: could not resolve 'dwmapi.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\ffmpegmediaplugin.dll'.
+213186 WARNING: Library not found: could not resolve 'MF.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\windowsmediaplugin.dll'.
+213189 WARNING: Library not found: could not resolve 'PROPSYS.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\windowsmediaplugin.dll'.
+213191 WARNING: Library not found: could not resolve 'MFReadWrite.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\windowsmediaplugin.dll'.
+213192 WARNING: Library not found: could not resolve 'dxva2.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\windowsmediaplugin.dll'.
+213194 WARNING: Library not found: could not resolve 'EVR.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\windowsmediaplugin.dll'.
+213198 WARNING: Library not found: could not resolve 'WINMM.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\windowsmediaplugin.dll'.
+213199 WARNING: Library not found: could not resolve 'MFPlat.DLL', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\windowsmediaplugin.dll'.
+213202 WARNING: Library not found: could not resolve 'd3d9.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\multimedia\\windowsmediaplugin.dll'.
+213209 WARNING: Library not found: could not resolve 'd3d11.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213210 WARNING: Library not found: could not resolve 'UIAutomationCore.DLL', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213211 WARNING: Library not found: could not resolve 'WTSAPI32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213212 WARNING: Library not found: could not resolve 'DWrite.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213213 WARNING: Library not found: could not resolve 'COMDLG32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213214 WARNING: Library not found: could not resolve 'SETUPAPI.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213217 WARNING: Library not found: could not resolve 'IMM32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213219 WARNING: Library not found: could not resolve 'WINMM.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213220 WARNING: Library not found: could not resolve 'SHLWAPI.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213222 WARNING: Library not found: could not resolve 'd2d1.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213227 WARNING: Library not found: could not resolve 'VERSION.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213228 WARNING: Library not found: could not resolve 'd3d9.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213230 WARNING: Library not found: could not resolve 'dwmapi.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qdirect2d.dll'.
+213263 WARNING: Library not found: could not resolve 'UIAutomationCore.DLL', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qwindows.dll'.
+213265 WARNING: Library not found: could not resolve 'WTSAPI32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qwindows.dll'.
+213269 WARNING: Library not found: could not resolve 'COMDLG32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qwindows.dll'.
+213270 WARNING: Library not found: could not resolve 'SETUPAPI.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qwindows.dll'.
+213272 WARNING: Library not found: could not resolve 'IMM32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qwindows.dll'.
+213274 WARNING: Library not found: could not resolve 'WINMM.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qwindows.dll'.
+213275 WARNING: Library not found: could not resolve 'SHLWAPI.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qwindows.dll'.
+213281 WARNING: Library not found: could not resolve 'd3d9.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qwindows.dll'.
+213283 WARNING: Library not found: could not resolve 'dwmapi.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforms\\qwindows.dll'.
+213323 WARNING: Library not found: could not resolve 'IMM32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\plugins\\platforminputcontexts\\qtvirtualkeyboardplugin.dll'.
+213517 WARNING: Library not found: could not resolve 'IPHLPAPI.DLL', dependency of 'D:\\python312\\cpython-3.12.13-windows-x86_64-none\\DLLs\\_socket.pyd'.
+213562 WARNING: Library not found: could not resolve 'PROPSYS.dll', dependency of 'D:\\python312\\cpython-3.12.13-windows-x86_64-none\\DLLs\\_wmi.pyd'.
+213575 WARNING: Library not found: could not resolve 'PSAPI.DLL', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PIL\\_imagingtk.cp312-win_amd64.pyd'.
+213627 WARNING: Library not found: could not resolve 'MSIMG32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\win32\\win32gui.pyd'.
+213631 WARNING: Library not found: could not resolve 'COMDLG32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\win32\\win32gui.pyd'.
+213633 WARNING: Library not found: could not resolve 'COMCTL32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\win32\\win32gui.pyd'.
+213638 WARNING: Library not found: could not resolve 'ntdll.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\pydantic_core\\_pydantic_core.cp312-win_amd64.pyd'.
+213641 WARNING: Library not found: could not resolve 'bcryptprimitives.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\pydantic_core\\_pydantic_core.cp312-win_amd64.pyd'.
+213680 WARNING: Library not found: could not resolve 'ntdll.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\cryptography\\hazmat\\bindings\\_rust.pyd'.
+213683 WARNING: Library not found: could not resolve 'bcryptprimitives.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\cryptography\\hazmat\\bindings\\_rust.pyd'.
+213893 WARNING: Library not found: could not resolve 'AUTHZ.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Core.dll'.
+213902 WARNING: Library not found: could not resolve 'ntdll.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Core.dll'.
+213910 WARNING: Library not found: could not resolve 'MPR.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Core.dll'.
+213912 WARNING: Library not found: could not resolve 'USERENV.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Core.dll'.
+213913 WARNING: Library not found: could not resolve 'WINMM.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Core.dll'.
+213915 WARNING: Library not found: could not resolve 'NETAPI32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Core.dll'.
+213917 WARNING: Library not found: could not resolve 'icuuc.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Core.dll'.
+213922 WARNING: Library not found: could not resolve 'VERSION.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Core.dll'.
+214012 WARNING: Library not found: could not resolve 'd3d11.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Gui.dll'.
+214015 WARNING: Library not found: could not resolve 'dxgi.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Gui.dll'.
+214016 WARNING: Library not found: could not resolve 'd3d12.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Gui.dll'.
+214020 WARNING: Library not found: could not resolve 'UxTheme.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Gui.dll'.
+214022 WARNING: Library not found: could not resolve 'DWrite.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Gui.dll'.
+214032 WARNING: Library not found: could not resolve 'DNSAPI.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Network.dll'.
+214034 WARNING: Library not found: could not resolve 'IPHLPAPI.DLL', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Network.dll'.
+214035 WARNING: Library not found: could not resolve 'WINHTTP.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Network.dll'.
+214038 WARNING: Library not found: could not resolve 'Secur32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Network.dll'.
+214472 WARNING: Library not found: could not resolve 'd3d11.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214473 WARNING: Library not found: could not resolve 'PROPSYS.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214475 WARNING: Library not found: could not resolve 'WTSAPI32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214478 WARNING: Library not found: could not resolve 'dbghelp.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214481 WARNING: Library not found: could not resolve 'DWrite.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214483 WARNING: Library not found: could not resolve 'WINUSB.DLL', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214486 WARNING: Library not found: could not resolve 'bthprops.cpl', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214489 WARNING: Library not found: could not resolve 'ntdll.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214494 WARNING: Library not found: could not resolve 'IPHLPAPI.DLL', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214497 WARNING: Library not found: could not resolve 'dxgi.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214499 WARNING: Library not found: could not resolve 'COMDLG32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214500 WARNING: Library not found: could not resolve 'COMCTL32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214501 WARNING: Library not found: could not resolve 'd3d12.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214504 WARNING: Library not found: could not resolve 'SETUPAPI.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214507 WARNING: Library not found: could not resolve 'MMDevAPI.DLL', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214511 WARNING: Library not found: could not resolve 'CFGMGR32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214513 WARNING: Library not found: could not resolve 'dhcpcsvc.DLL', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214515 WARNING: Library not found: could not resolve 'IMM32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214517 WARNING: Library not found: could not resolve 'USERENV.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214519 WARNING: Library not found: could not resolve 'pdh.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214520 WARNING: Library not found: could not resolve 'WINHTTP.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214522 WARNING: Library not found: could not resolve 'Secur32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214524 WARNING: Library not found: could not resolve 'HID.DLL', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214526 WARNING: Library not found: could not resolve 'SHLWAPI.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214528 WARNING: Library not found: could not resolve 'FONTSUB.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214530 WARNING: Library not found: could not resolve 'dcomp.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214542 WARNING: Library not found: could not resolve 'WINSPOOL.DRV', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214550 WARNING: Library not found: could not resolve 'UxTheme.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214551 WARNING: Library not found: could not resolve 'ncrypt.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214555 WARNING: Library not found: could not resolve 'VERSION.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214557 WARNING: Library not found: could not resolve 'urlmon.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214559 WARNING: Library not found: could not resolve 'd3d9.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214561 WARNING: Library not found: could not resolve 'dwmapi.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6WebEngineCore.dll'.
+214578 WARNING: Library not found: could not resolve 'SETUPAPI.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6SerialPort.dll'.
+214592 WARNING: Library not found: could not resolve 'UxTheme.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Widgets.dll'.
+214595 WARNING: Library not found: could not resolve 'dwmapi.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Widgets.dll'.
+214598 WARNING: Library not found: could not resolve 'bcrypt.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\avutil-59.dll'.
+214601 WARNING: Library not found: could not resolve 'AVRT.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Multimedia.dll'.
+214611 WARNING: Library not found: could not resolve 'PROPSYS.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6Multimedia.dll'.
+214617 WARNING: Library not found: could not resolve 'Secur32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\avformat-61.dll'.
+214677 WARNING: Library not found: could not resolve 'IMM32.dll', dependency of 'D:\\python312\\cpython-3.12.13-windows-x86_64-none\\DLLs\\tk86t.dll'.
+214684 WARNING: Library not found: could not resolve 'COMDLG32.dll', dependency of 'D:\\python312\\cpython-3.12.13-windows-x86_64-none\\DLLs\\tk86t.dll'.
+214686 WARNING: Library not found: could not resolve 'COMCTL32.dll', dependency of 'D:\\python312\\cpython-3.12.13-windows-x86_64-none\\DLLs\\tk86t.dll'.
+214699 WARNING: Library not found: could not resolve 'USERENV.dll', dependency of 'D:\\python312\\cpython-3.12.13-windows-x86_64-none\\DLLs\\tcl86t.dll'.
+214706 WARNING: Library not found: could not resolve 'NETAPI32.dll', dependency of 'D:\\python312\\cpython-3.12.13-windows-x86_64-none\\DLLs\\tcl86t.dll'.
+214723 WARNING: Library not found: could not resolve 'IPHLPAPI.DLL', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\curl_cffi.libs\\libcurl-impersonate-70adc4d9b16b25ba6b7778922d84043b.dll'.
+214727 WARNING: Library not found: could not resolve 'Normaliz.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\curl_cffi.libs\\libcurl-impersonate-70adc4d9b16b25ba6b7778922d84043b.dll'.
+214882 WARNING: Library not found: could not resolve 'WINSPOOL.DRV', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6PrintSupport.dll'.
+214887 WARNING: Library not found: could not resolve 'COMDLG32.dll', dependency of 'C:\\Users\\86157\\comic18_venv\\Lib\\site-packages\\PySide6\\Qt6PrintSupport.dll'.
+215554 INFO: Warnings written to F:\project\comic18\build\comic18\warn-comic18.txt
+216172 INFO: Graph cross-reference written to F:\project\comic18\build\comic18\xref-comic18.html
+216648 INFO: checking PYZ
+216648 INFO: Building PYZ because PYZ-00.toc is non existent
+216648 INFO: Building PYZ (ZlibArchive) F:\project\comic18\build\comic18\PYZ-00.pyz
+219659 INFO: Building PYZ (ZlibArchive) F:\project\comic18\build\comic18\PYZ-00.pyz completed successfully.
+219890 INFO: checking PKG
+219890 INFO: Building PKG because PKG-00.toc is non existent
+219890 INFO: Building PKG (CArchive) comic18.pkg
+377544 INFO: Building PKG (CArchive) comic18.pkg completed successfully.
+377724 INFO: Bootloader C:\Users\86157\comic18_venv\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\run.exe
+377724 INFO: checking EXE
+377724 INFO: Building EXE because EXE-00.toc is non existent
+377724 INFO: Building EXE from EXE-00.toc
+377725 INFO: Copying bootloader EXE to F:\project\comic18\dist\comic18.exe
+377740 INFO: Copying icon to EXE
+377749 INFO: Copying version information to EXE
+377759 INFO: Copying 0 resources to EXE
+377759 INFO: Embedding manifest in EXE
+377769 INFO: Appending PKG archive to EXE
+378377 INFO: Fixing EXE headers
+382771 INFO: Building EXE from EXE-00.toc completed successfully.
+382999 INFO: Build complete! The results are available in: F:\project\comic18\dist
+pygame 2.6.1 (SDL 2.28.4, Python 3.12.13)
+Hello from the pygame community. https://www.pygame.org/contribute.html

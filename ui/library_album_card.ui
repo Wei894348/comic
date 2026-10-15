@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LibraryAlbumCard</class>
+ <widget class="QFrame" name="libraryAlbumCard">
+  <property name="objectName"><string>libraryAlbumCard</string></property>
+  <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+  <layout class="QHBoxLayout" name="libraryAlbumCardLayout">
+   <property name="leftMargin"><number>10</number></property>
+   <property name="topMargin"><number>9</number></property>
+   <property name="rightMargin"><number>12</number></property>
+   <property name="bottomMargin"><number>9</number></property>
+   <property name="spacing"><number>12</number></property>
+   <item>
+    <widget class="QLabel" name="libraryAlbumCover">
+     <property name="minimumSize"><size><width>86</width><height>116</height></size></property>
+     <property name="maximumSize"><size><width>86</width><height>116</height></size></property>
+     <property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property>
+     <property name="text"><string></string></property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QVBoxLayout" name="libraryAlbumInfoLayout">
+     <property name="leftMargin"><number>0</number></property>
+     <property name="topMargin"><number>0</number></property>
+     <property name="rightMargin"><number>0</number></property>
+     <property name="bottomMargin"><number>0</number></property>
+     <property name="spacing"><number>6</number></property>
+     <item><widget class="QLabel" name="libraryAlbumTitle"><property name="wordWrap"><bool>true</bool></property></widget></item>
+     <item><widget class="QLabel" name="libraryAlbumMeta"/></item>
+     <item><widget class="QLabel" name="libraryAlbumTags"/></item>
+     <item><spacer name="libraryAlbumInfoSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item>
+    </layout>
+   </item>
+   <item><widget class="QPushButton" name="libraryAlbumDetailButton"><property name="text"><string>&#x8BE6;&#x60C5;</string></property></widget></item>
+   <item><widget class="QPushButton" name="libraryAlbumReadButton"><property name="text"><string>&#x9605;&#x8BFB;</string></property></widget></item>
+   <item><widget class="QPushButton" name="libraryAlbumQueueButton"><property name="text"><string>&#x4E0B;&#x8F7D;</string></property></widget></item>
+   <item><widget class="QComboBox" name="libraryAlbumMoveCombo"/></item>
+   <item><widget class="QPushButton" name="libraryAlbumToggleButton"><property name="text"><string>&#x53D6;&#x6D88;/&#x6536;&#x85CF;</string></property></widget></item>
+   <item><widget class="QPushButton" name="libraryAlbumRemoveButton"><property name="text"><string>&#x79FB;&#x9664;</string></property></widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

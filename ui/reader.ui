@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ReaderWindow</class>
+ <widget class="QWidget" name="readerWindow">
+  <layout class="QVBoxLayout" name="readerRootLayout">
+   <property name="leftMargin"><number>0</number></property>
+   <property name="topMargin"><number>0</number></property>
+   <property name="rightMargin"><number>0</number></property>
+   <property name="bottomMargin"><number>0</number></property>
+   <property name="spacing"><number>0</number></property>
+   <item>
+    <widget class="QToolBar" name="readerToolbar">
+     <property name="movable"><bool>false</bool></property>
+     <property name="iconSize"><size><width>24</width><height>24</height></size></property>
+     <addaction name="actionZoomOut"/>
+     <addaction name="actionZoomIn"/>
+     <addaction name="actionDownloadAlbum"/>
+     <addaction name="actionFitWidth"/>
+     <addaction name="actionLockReader"/>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="readerInfoLayout">
+     <property name="leftMargin"><number>12</number></property>
+     <property name="topMargin"><number>6</number></property>
+     <property name="rightMargin"><number>12</number></property>
+     <property name="bottomMargin"><number>6</number></property>
+     <property name="spacing"><number>8</number></property>
+     <item>
+      <widget class="QLabel" name="readerToolbarLabel">
+       <property name="text"><string>章节</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="readerChapterCombo">
+       <property name="minimumSize"><size><width>170</width><height>0</height></size></property>
+       <property name="maximumSize"><size><width>360</width><height>16777215</height></size></property>
+       <property name="maxVisibleItems"><number>16</number></property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="readerInfoSpacer">
+       <property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property>
+       <property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QLabel" name="readerStatusLabel">
+       <property name="minimumSize"><size><width>210</width><height>0</height></size></property>
+       <property name="maximumSize"><size><width>320</width><height>16777215</height></size></property>
+       <property name="text"><string>准备中</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="readerPageLabel">
+       <property name="text"><string>第 0 / 0 页</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="readerZoomLabel">
+       <property name="text"><string>40%</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QWidget" name="readerViewHost">
+     <layout class="QVBoxLayout" name="readerViewHostLayout">
+      <property name="leftMargin"><number>0</number></property>
+      <property name="topMargin"><number>0</number></property>
+      <property name="rightMargin"><number>0</number></property>
+      <property name="bottomMargin"><number>0</number></property>
+      <property name="spacing"><number>0</number></property>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+  <action name="actionZoomOut">
+   <property name="text"><string>缩小</string></property>
+  </action>
+  <action name="actionZoomIn">
+   <property name="text"><string>放大</string></property>
+  </action>
+  <action name="actionDownloadAlbum">
+   <property name="text"><string>加入下载</string></property>
+  </action>
+  <action name="actionFitWidth">
+   <property name="text"><string>适应宽度</string></property>
+  </action>
+  <action name="actionLockReader">
+   <property name="checkable"><bool>true</bool></property>
+   <property name="text"><string></string></property>
+   <property name="toolTip"><string>锁定阅读器</string></property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

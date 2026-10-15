@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>AboutPage</class>
+ <widget class="QFrame" name="aboutPanel">
+  <property name="objectName"><string>panel</string></property>
+  <layout class="QVBoxLayout" name="aboutLayout">
+   <property name="leftMargin"><number>14</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>14</number></property><property name="bottomMargin"><number>14</number></property><property name="spacing"><number>10</number></property>
+   <item><widget class="QLabel" name="aboutTitle"><property name="objectName"><string>panelTitle</string></property><property name="text"><string>&#x5173;&#x4E8E;</string></property></widget></item>
+   <item><widget class="QLabel" name="aboutVersionLabel"><property name="textInteractionFlags"><set>Qt::TextInteractionFlag::TextSelectableByMouse</set></property></widget></item>
+   <item><widget class="QLabel" name="aboutNoteLabel"><property name="text"><string>&#x5F53;&#x524D;&#x7248;&#x672C;&#x652F;&#x6301;&#x699C;&#x5355;/&#x641C;&#x7D22;&#x5206;&#x9875;&#x52A0;&#x8F7D;&#x3001;&#x5C01;&#x9762;&#x57DF;&#x540D;&#x6C60;&#x3001;&#x540E;&#x53F0;&#x9605;&#x8BFB;&#x7F13;&#x5B58;&#x3001;PDF/ZIP/&#x56FE;&#x7247;&#x5BFC;&#x51FA;&#x3002;</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+   <item><layout class="QHBoxLayout" name="aboutActions"><item><widget class="QPushButton" name="showLogButton"><property name="text"><string>&#x67E5;&#x770B;&#x8FD0;&#x884C;&#x65E5;&#x5FD7;</string></property></widget></item><item><widget class="QPushButton" name="openDataButton"><property name="text"><string>&#x6253;&#x5F00;&#x5E94;&#x7528;&#x6570;&#x636E;&#x76EE;&#x5F55;</string></property></widget></item><item><spacer name="aboutActionsSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item></layout></item>
+   <item><spacer name="aboutBottomSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item>
+  </layout>
+ </widget>
+ <resources/><connections/>
+</ui>

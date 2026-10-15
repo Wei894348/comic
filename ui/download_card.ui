@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DownloadCard</class>
+ <widget class="QFrame" name="downloadCard">
+  <property name="minimumSize"><size><width>0</width><height>132</height></size></property>
+  <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+  <layout class="QHBoxLayout" name="downloadCardLayout">
+   <property name="leftMargin"><number>9</number></property>
+   <property name="topMargin"><number>8</number></property>
+   <property name="rightMargin"><number>9</number></property>
+   <property name="bottomMargin"><number>8</number></property>
+   <property name="spacing"><number>10</number></property>
+   <item>
+    <widget class="QLabel" name="downloadCover">
+     <property name="minimumSize"><size><width>82</width><height>110</height></size></property>
+     <property name="maximumSize"><size><width>82</width><height>110</height></size></property>
+     <property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property>
+     <property name="text"><string></string></property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QVBoxLayout" name="downloadInfoLayout">
+     <property name="spacing"><number>6</number></property>
+     <item>
+      <layout class="QHBoxLayout" name="downloadTopLayout">
+       <property name="spacing"><number>8</number></property>
+       <item><widget class="QLabel" name="downloadTitle"><property name="text"><string></string></property></widget></item>
+       <item><widget class="QLabel" name="downloadStatus"><property name="minimumSize"><size><width>64</width><height>0</height></size></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string></string></property></widget></item>
+      </layout>
+     </item>
+     <item><widget class="QLabel" name="downloadSub"><property name="text"><string></string></property></widget></item>
+     <item><widget class="QLabel" name="downloadTransfer"><property name="minimumSize"><size><width>230</width><height>0</height></size></property><property name="text"><string></string></property></widget></item>
+     <item>
+      <layout class="QHBoxLayout" name="downloadProgressLayout">
+       <property name="spacing"><number>8</number></property>
+       <item><widget class="QProgressBar" name="downloadProgress"><property name="value"><number>0</number></property></widget></item>
+       <item><widget class="QPushButton" name="downloadRetry"><property name="minimumSize"><size><width>64</width><height>0</height></size></property><property name="maximumSize"><size><width>64</width><height>16777215</height></size></property><property name="text"><string>&#x91CD;&#x8BD5;</string></property></widget></item>
+       <item><widget class="QPushButton" name="downloadCancel"><property name="minimumSize"><size><width>64</width><height>0</height></size></property><property name="maximumSize"><size><width>64</width><height>16777215</height></size></property><property name="text"><string>&#x53D6;&#x6D88;</string></property></widget></item>
+      </layout>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

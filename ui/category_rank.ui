@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>CategoryRankPanel</class>
+ <widget class="QFrame" name="categoryRankPanel">
+  <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+  <layout class="QVBoxLayout" name="categoryRankRootLayout">
+   <property name="leftMargin"><number>14</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>14</number></property><property name="bottomMargin"><number>14</number></property><property name="spacing"><number>0</number></property>
+   <item>
+    <widget class="QScrollArea" name="categoryRankNavScroll">
+     <property name="minimumSize"><size><width>0</width><height>56</height></size></property><property name="maximumSize"><size><width>16777215</width><height>56</height></size></property><property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property><property name="widgetResizable"><bool>true</bool></property><property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAsNeeded</enum></property><property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+     <widget class="QWidget" name="categoryRankNavContent">
+      <layout class="QHBoxLayout" name="categoryRankNavLayout">
+       <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>2</number></property>
+       <item><widget class="QPushButton" name="categoryRankOverviewButton"><property name="text"><string>分类</string></property></widget></item>
+       <item><widget class="QPushButton" name="categoryRankAllButton"><property name="text"><string>最新A漫</string></property></widget></item>
+       <item><widget class="QPushButton" name="categoryRankDoujinButton"><property name="text"><string>同人</string></property></widget></item>
+       <item><widget class="QPushButton" name="categoryRankSingleButton"><property name="text"><string>单本</string></property></widget></item>
+       <item><widget class="QPushButton" name="categoryRankShortButton"><property name="text"><string>短篇</string></property></widget></item>
+       <item><widget class="QPushButton" name="categoryRankOtherButton"><property name="text"><string>其他类</string></property></widget></item>
+       <item><widget class="QPushButton" name="categoryRankHanmanButton"><property name="text"><string>韩漫</string></property></widget></item>
+       <item><widget class="QPushButton" name="categoryRankEnglishButton"><property name="text"><string>ENGLISH MANGA</string></property></widget></item>
+       <item><widget class="QPushButton" name="categoryRankGeneralHanmanButton"><property name="text"><string>一般向韩漫</string></property></widget></item>
+       <item><widget class="QPushButton" name="categoryRankCosplayButton"><property name="text"><string>COSPLAY</string></property></widget></item>
+       <item><widget class="QPushButton" name="categoryRank3dButton"><property name="text"><string>3D</string></property></widget></item>
+       <item><widget class="QPushButton" name="categoryRankTranslatedButton"><property name="text"><string>禁漫汉化组</string></property></widget></item>
+       <item><spacer name="categoryRankNavSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QStackedWidget" name="categoryRankContentStack">
+     <widget class="QWidget" name="categoryRankTagPage">
+      <layout class="QVBoxLayout" name="categoryRankTagPageLayout">
+       <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>0</number></property>
+       <item>
+        <widget class="QScrollArea" name="categoryRankContentScroll">
+         <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property><property name="widgetResizable"><bool>true</bool></property><property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+         <widget class="QWidget" name="categoryRankContent">
+          <layout class="QVBoxLayout" name="categoryRankContentLayout">
+           <property name="leftMargin"><number>14</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>14</number></property><property name="bottomMargin"><number>18</number></property><property name="spacing"><number>15</number></property>
+           <item><widget class="QLabel" name="categoryRankThemeTitle"><property name="text"><string>主题A漫</string></property></widget></item>
+           <item><layout class="QGridLayout" name="categoryRankThemeGrid"><property name="horizontalSpacing"><number>8</number></property><property name="verticalSpacing"><number>8</number></property></layout></item>
+           <item><widget class="QLabel" name="categoryRankRoleTitle"><property name="text"><string>角色 / 扮演</string></property></widget></item>
+           <item><layout class="QGridLayout" name="categoryRankRoleGrid"><property name="horizontalSpacing"><number>8</number></property><property name="verticalSpacing"><number>8</number></property></layout></item>
+           <item><widget class="QLabel" name="categoryRankPlayTitle"><property name="text"><string>特殊PLAY</string></property></widget></item>
+           <item><layout class="QGridLayout" name="categoryRankPlayGrid"><property name="horizontalSpacing"><number>8</number></property><property name="verticalSpacing"><number>8</number></property></layout></item>
+           <item><widget class="QLabel" name="categoryRankOtherTitle"><property name="text"><string>其他</string></property></widget></item>
+           <item><layout class="QGridLayout" name="categoryRankTagOtherGrid"><property name="horizontalSpacing"><number>8</number></property><property name="verticalSpacing"><number>8</number></property></layout></item>
+           <item><spacer name="categoryRankBottomSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="categoryRankResultsPage">
+      <layout class="QVBoxLayout" name="categoryRankResultsLayout">
+       <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>0</number></property>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

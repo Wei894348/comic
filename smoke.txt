@@ -1,0 +1,14 @@
+2026-08-29 19:53:53,565 - main.py[line:15] - INFO: JMComic 启动，日志文件：C:\Users\86157\AppData\Local\comic18\logs\20260829.log
+Traceback (most recent call last):
+  File "run.py", line 5, in <module>
+    main()
+  File "script\downloader.py", line 134, in main
+    run_downloader()
+  File "script\downloader.py", line 113, in run_downloader
+    main()
+  File "jm_app\main.py", line 35, in main
+  File "jm_app\frontend\ui.py", line 486, in __init__
+  File "jm_app\frontend\ui.py", line 1217, in _build_login_page
+  File "jm_app\frontend\ui.py", line 1150, in _load_login_page_from_ui
+RuntimeError: login.ui not found: F:\project\comic18\dist\ui\login.ui
+[PYI-22196:ERROR] Failed to execute script 'run' due to unhandled exception!

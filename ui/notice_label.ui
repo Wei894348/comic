@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>NoticeLabel</class>
+ <widget class="QLabel" name="noticeLabel">
+  <property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property>
+  <property name="wordWrap"><bool>true</bool></property>
+  <property name="text"><string></string></property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

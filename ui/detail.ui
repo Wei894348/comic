@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DetailPage</class>
+ <widget class="QFrame" name="DetailPage">
+  <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+  <layout class="QVBoxLayout" name="detailRootLayout">
+   <property name="leftMargin"><number>0</number></property>
+   <property name="topMargin"><number>0</number></property>
+   <property name="rightMargin"><number>0</number></property>
+   <property name="bottomMargin"><number>0</number></property>
+   <item>
+    <widget class="QScrollArea" name="detailScrollArea">
+     <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+     <property name="widgetResizable"><bool>true</bool></property>
+     <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOff</enum></property>
+     <widget class="QWidget" name="detailContent">
+      <layout class="QVBoxLayout" name="detailContentLayout">
+       <property name="leftMargin"><number>14</number></property>
+       <property name="topMargin"><number>12</number></property>
+       <property name="rightMargin"><number>14</number></property>
+       <property name="bottomMargin"><number>14</number></property>
+       <property name="spacing"><number>10</number></property>
+       <item>
+        <layout class="QHBoxLayout" name="detailHeroLayout">
+         <property name="spacing"><number>16</number></property>
+         <item>
+          <widget class="QLabel" name="detailCoverLabel">
+           <property name="minimumSize"><size><width>300</width><height>440</height></size></property>
+           <property name="maximumSize"><size><width>300</width><height>440</height></size></property>
+           <property name="text"><string>暂无封面</string></property>
+           <property name="alignment"><set>Qt::AlignCenter</set></property>
+          </widget>
+         </item>
+         <item>
+          <layout class="QVBoxLayout" name="detailInfoLayout">
+           <property name="spacing"><number>8</number></property>
+           <item>
+            <layout class="QGridLayout" name="detailGridLayout">
+             <property name="horizontalSpacing"><number>12</number></property>
+             <property name="verticalSpacing"><number>8</number></property>
+             <item row="0" column="0"><widget class="QLabel" name="detailTitleName"><property name="minimumSize"><size><width>64</width><height>0</height></size></property><property name="text"><string>标题：</string></property><property name="alignment"><set>Qt::AlignLeft|Qt::AlignTop</set></property></widget></item>
+             <item row="0" column="1"><widget class="QLabel" name="detailTitleLabel"><property name="text"><string>-</string></property><property name="wordWrap"><bool>true</bool></property><property name="alignment"><set>Qt::AlignLeft|Qt::AlignTop</set></property></widget></item>
+             <item row="1" column="0"><widget class="QLabel" name="detailIdName"><property name="text"><string>ID：</string></property></widget></item>
+             <item row="1" column="1"><widget class="QLabel" name="detailIdLabel"><property name="text"><string>-</string></property><property name="textInteractionFlags"><set>Qt::TextSelectableByMouse</set></property></widget></item>
+             <item row="2" column="0"><widget class="QLabel" name="detailAuthorName"><property name="text"><string>作者：</string></property><property name="alignment"><set>Qt::AlignLeft|Qt::AlignTop</set></property></widget></item>
+             <item row="2" column="1"><widget class="QLabel" name="detailAuthorLabel"><property name="text"><string>-</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+             <item row="3" column="0"><widget class="QLabel" name="detailDescriptionName"><property name="text"><string>描述：</string></property><property name="alignment"><set>Qt::AlignLeft|Qt::AlignTop</set></property></widget></item>
+             <item row="3" column="1"><widget class="QLabel" name="detailDescriptionLabel"><property name="minimumSize"><size><width>0</width><height>72</height></size></property><property name="text"><string>-</string></property><property name="wordWrap"><bool>true</bool></property><property name="alignment"><set>Qt::AlignLeft|Qt::AlignTop</set></property><property name="textInteractionFlags"><set>Qt::TextSelectableByMouse</set></property></widget></item>
+             <item row="4" column="0"><widget class="QLabel" name="detailLikesName"><property name="text"><string>爱心数：</string></property></widget></item>
+             <item row="4" column="1"><widget class="QLabel" name="detailLikesLabel"><property name="text"><string>-</string></property></widget></item>
+             <item row="5" column="0"><widget class="QLabel" name="detailViewsName"><property name="text"><string>观看数：</string></property></widget></item>
+             <item row="5" column="1"><widget class="QLabel" name="detailViewsLabel"><property name="text"><string>-</string></property></widget></item>
+             <item row="6" column="0"><widget class="QLabel" name="detailPageCountName"><property name="text"><string>页数：</string></property></widget></item>
+             <item row="6" column="1"><widget class="QLabel" name="detailPageCountLabel"><property name="text"><string>-</string></property></widget></item>
+             <item row="7" column="0"><widget class="QLabel" name="detailTagsName"><property name="text"><string>Tags：</string></property><property name="alignment"><set>Qt::AlignLeft|Qt::AlignTop</set></property></widget></item>
+             <item row="7" column="1"><widget class="QWidget" name="detailTagsWidget"><layout class="QHBoxLayout" name="detailTagsStrip"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>8</number></property></layout></widget></item>
+            </layout>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </item>
+       <item><widget class="QLabel" name="detailTagsFallbackLabel"><property name="visible"><bool>false</bool></property><property name="text"><string>标签：-</string></property></widget></item>
+       <item>
+        <widget class="QTabWidget" name="detailTabWidget">
+         <property name="currentIndex"><number>0</number></property>
+         <widget class="QWidget" name="detailReadTab">
+          <attribute name="title"><string>阅读</string></attribute>
+          <layout class="QVBoxLayout" name="detailReadTabLayout">
+           <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>8</number></property>
+           <item>
+            <layout class="QHBoxLayout" name="detailActionLayout">
+             <property name="spacing"><number>6</number></property>
+             <item><spacer name="detailActionLeftSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item>
+             <item><widget class="QToolButton" name="detailFavoriteButton"><property name="minimumSize"><size><width>68</width><height>42</height></size></property><property name="toolButtonStyle"><enum>Qt::ToolButtonStyle::ToolButtonTextOnly</enum></property><property name="text"><string>收藏</string></property></widget></item>
+             <item><widget class="QToolButton" name="detailLocalFavoriteButton"><property name="minimumSize"><size><width>64</width><height>42</height></size></property><property name="toolButtonStyle"><enum>Qt::ToolButtonStyle::ToolButtonTextOnly</enum></property><property name="text"><string>本地</string></property></widget></item>
+             <item><widget class="QToolButton" name="detailCommentButton"><property name="minimumSize"><size><width>72</width><height>42</height></size></property><property name="toolButtonStyle"><enum>Qt::ToolButtonStyle::ToolButtonTextOnly</enum></property><property name="text"><string>评论 (0)</string></property></widget></item>
+             <item><widget class="QToolButton" name="detailQueueButton"><property name="minimumSize"><size><width>62</width><height>42</height></size></property><property name="toolButtonStyle"><enum>Qt::ToolButtonStyle::ToolButtonTextOnly</enum></property><property name="text"><string>下载</string></property></widget></item>
+             <item><widget class="QToolButton" name="detailClearCacheButton"><property name="minimumSize"><size><width>54</width><height>42</height></size></property><property name="toolButtonStyle"><enum>Qt::ToolButtonStyle::ToolButtonTextOnly</enum></property><property name="text"><string>清理</string></property></widget></item>
+             <item><widget class="QPushButton" name="detailReadButton"><property name="minimumSize"><size><width>116</width><height>40</height></size></property><property name="text"><string>观看第1章</string></property></widget></item>
+             <item><spacer name="detailActionRightSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item>
+            </layout>
+           </item>
+           <item><widget class="QWidget" name="detailChapterButtons"><layout class="QGridLayout" name="detailChapterButtonGrid"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>2</number></property><property name="horizontalSpacing"><number>8</number></property><property name="verticalSpacing"><number>8</number></property></layout></widget></item>
+           <item><widget class="QTableWidget" name="detailChapterTable"><property name="visible"><bool>false</bool></property><column><property name="text"><string>选择</string></property></column><column><property name="text"><string>序号</string></property></column><column><property name="text"><string>章节</string></property></column><column><property name="text"><string>URL</string></property></column></widget></item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="detailOfflineTab">
+          <attribute name="title"><string>已下载章节</string></attribute>
+          <layout class="QVBoxLayout" name="detailOfflineTabLayout">
+           <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>10</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>8</number></property>
+           <item><layout class="QHBoxLayout" name="detailOfflineActionLayout"><item><widget class="QLabel" name="detailOfflineHintLabel"><property name="text"><string>可离线阅读已下载的章节：</string></property></widget></item><item><widget class="QPushButton" name="detailOfflineReadButton"><property name="minimumSize"><size><width>104</width><height>40</height></size></property><property name="text"><string>开始阅读</string></property></widget></item><item><spacer name="detailOfflineSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item></layout></item>
+           <item><widget class="QTableWidget" name="detailOfflineChapterTable"><column><property name="text"><string>序号</string></property></column><column><property name="text"><string>章节</string></property></column><column><property name="text"><string>本地缓存</string></property></column></widget></item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

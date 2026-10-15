@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SearchPage</class>
+ <widget class="QWidget" name="SearchPage">
+  <layout class="QVBoxLayout" name="searchRootLayout">
+   <property name="leftMargin"><number>10</number></property>
+   <property name="topMargin"><number>10</number></property>
+   <property name="rightMargin"><number>10</number></property>
+   <property name="bottomMargin"><number>8</number></property>
+   <property name="spacing"><number>8</number></property>
+   <item>
+    <widget class="QFrame" name="searchPageToolbar">
+     <property name="minimumSize"><size><width>0</width><height>56</height></size></property>
+     <property name="maximumSize"><size><width>16777215</width><height>56</height></size></property>
+     <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+     <layout class="QHBoxLayout" name="searchPageToolbarLayout">
+      <property name="leftMargin"><number>10</number></property>
+      <property name="topMargin"><number>4</number></property>
+      <property name="rightMargin"><number>10</number></property>
+      <property name="bottomMargin"><number>4</number></property>
+      <property name="spacing"><number>12</number></property>
+      <item><widget class="QLabel" name="searchPageCaption"><property name="text"><string>搜索：</string></property></widget></item>
+      <item><widget class="QLabel" name="searchPageQueryLabel"><property name="minimumSize"><size><width>96</width><height>0</height></size></property><property name="text"><string/></property></widget></item>
+      <item><widget class="QLineEdit" name="searchPageEdit"><property name="placeholderText"><string>输入漫画名称、作者或标签</string></property><property name="clearButtonEnabled"><bool>true</bool></property></widget></item>
+      <item><widget class="QPushButton" name="searchPageButton"><property name="minimumSize"><size><width>84</width><height>42</height></size></property><property name="text"><string>搜索</string></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QStackedWidget" name="searchResultStack">
+     <widget class="QWidget" name="searchLoadingPage">
+      <layout class="QVBoxLayout" name="searchLoadingLayout">
+       <item><spacer name="searchLoadingTopSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+       <item alignment="Qt::AlignHCenter"><widget class="QLabel" name="searchLoadingArt"><property name="minimumSize"><size><width>150</width><height>118</height></size></property><property name="maximumSize"><size><width>150</width><height>118</height></size></property><property name="text"><string/></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
+       <item alignment="Qt::AlignHCenter"><widget class="QLabel" name="searchLoadingText"><property name="text"><string>正在加载搜索结果</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="styleSheet"><string notr="true">color:#64748b;</string></property></widget></item>
+       <item><spacer name="searchLoadingBottomSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+      </layout>
+     </widget>
+     <widget class="QScrollArea" name="searchResultScroll">
+      <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+      <property name="widgetResizable"><bool>true</bool></property>
+      <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+      <widget class="QWidget" name="searchResultGridWidget"/>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

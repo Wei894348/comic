@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DownloadPanel</class>
+ <widget class="QFrame" name="downloadPanel">
+  <property name="minimumSize"><size><width>0</width><height>420</height></size></property>
+  <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+  <layout class="QHBoxLayout" name="downloadRootLayout">
+   <property name="leftMargin"><number>12</number></property>
+   <property name="topMargin"><number>12</number></property>
+   <property name="rightMargin"><number>12</number></property>
+   <property name="bottomMargin"><number>12</number></property>
+   <property name="spacing"><number>12</number></property>
+   <item>
+    <widget class="QFrame" name="downloadWorkspace">
+     <property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property>
+     <layout class="QVBoxLayout" name="downloadWorkspaceLayout">
+      <property name="leftMargin"><number>16</number></property>
+      <property name="topMargin"><number>14</number></property>
+      <property name="rightMargin"><number>16</number></property>
+      <property name="bottomMargin"><number>14</number></property>
+      <property name="spacing"><number>10</number></property>
+      <item><layout class="QHBoxLayout" name="downloadHeaderLayout"><property name="spacing"><number>9</number></property><item><widget class="QLabel" name="downloadHeaderIcon"><property name="minimumSize"><size><width>34</width><height>34</height></size></property><property name="maximumSize"><size><width>34</width><height>34</height></size></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string/></property></widget></item><item><widget class="QLabel" name="downloadPageTitle"><property name="text"><string>正在下载</string></property></widget></item><item><spacer name="downloadHeaderSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property></spacer></item></layout></item>
+      <item><widget class="QProgressBar" name="downloadProgress"><property name="maximum"><number>100</number></property><property name="value"><number>0</number></property><property name="format"><string>总进度 0%</string></property></widget></item>
+      <item><layout class="QHBoxLayout" name="downloadActionsLayout"><property name="spacing"><number>8</number></property><item><spacer name="downloadActionsSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property></spacer></item><item><widget class="QPushButton" name="clearQueueButton"><property name="text"><string>清空队列</string></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item><item><widget class="QPushButton" name="cancelDownloadsButton"><property name="text"><string>取消下载</string></property><property name="enabled"><bool>false</bool></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item><item><widget class="QPushButton" name="startQueueButton"><property name="text"><string>开始下载队列</string></property><property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property></widget></item></layout></item>
+      <item><widget class="QFrame" name="downloadDivider"><property name="minimumSize"><size><width>0</width><height>1</height></size></property><property name="maximumSize"><size><width>16777215</width><height>1</height></size></property><property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property></widget></item>
+      <item>
+       <widget class="QStackedWidget" name="downloadQueueStack">
+        <property name="currentIndex"><number>1</number></property>
+        <widget class="QWidget" name="downloadQueuePage">
+         <layout class="QVBoxLayout" name="downloadQueuePageLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><item><widget class="QScrollArea" name="queueScroll"><property name="frameShape"><enum>QFrame::Shape::NoFrame</enum></property><property name="widgetResizable"><bool>true</bool></property><property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOff</enum></property><widget class="QWidget" name="queueCardsWidget"><layout class="QVBoxLayout" name="queueCardsLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>8</number></property><item><spacer name="queueCardsSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item></layout></widget></widget></item></layout>
+        </widget>
+        <widget class="QWidget" name="downloadEmptyPage">
+         <layout class="QVBoxLayout" name="downloadEmptyLayout">
+          <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>10</number></property>
+          <item><spacer name="downloadEmptyTopSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item>
+          <item alignment="Qt::AlignmentFlag::AlignHCenter"><widget class="QLabel" name="downloadEmptyIcon"><property name="minimumSize"><size><width>64</width><height>64</height></size></property><property name="maximumSize"><size><width>64</width><height>64</height></size></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string/></property></widget></item>
+          <item><widget class="QLabel" name="downloadEmptyTitle"><property name="text"><string>暂无进行中的任务</string></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property></widget></item>
+          <item><widget class="QLabel" name="downloadEmptyHint"><property name="text"><string>添加漫画后，未完成的下载任务会显示在这里</string></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+          <item><spacer name="downloadEmptyBottomSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Expanding</enum></property></spacer></item>
+         </layout>
+        </widget>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
