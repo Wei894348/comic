@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import math
+import os
 import threading
 from io import BytesIO
 from collections import OrderedDict
@@ -382,6 +383,7 @@ class MangaGraphicsView(QGraphicsView):
 class HdMangaReaderWindow(QWidget):
     page_position_changed = Signal(int, int, str)
     download_requested = Signal(object)
+    colorize_requested = Signal(object, object)  # (title, source_dir)
 
     def __init__(self, title: str, parent=None):
         super().__init__(parent, Qt.Window)
@@ -436,6 +438,8 @@ class HdMangaReaderWindow(QWidget):
         self._fit_pending = False
         self._restore_page = 0
         self.reader_locked = False
+        self.current_chapter_dir: Optional[Path] = None
+        self.current_chapter_title = ""
 
         self.reader_form = self.load_reader_form()
         self.reader_form.setParent(self)
@@ -465,6 +469,9 @@ class HdMangaReaderWindow(QWidget):
         self.fit_width_action.triggered.connect(self.request_current_album_download)
         self.actual_size_action.triggered.connect(self.fit_width)
         self.lock_reader_action.triggered.connect(self.toggle_reader_lock)
+        self.colorize_action = self.require_reader_action("actionColorize")
+        self.colorize_action.setToolTip("AI 上色本章并重新加载")
+        self.colorize_action.triggered.connect(self.request_colorize_current_chapter)
         view_host = self.require_reader_child(QWidget, "readerViewHost")
         if view_host.layout() is None:
             raise RuntimeError("reader.ui missing readerViewHost layout")
@@ -909,6 +916,40 @@ class HdMangaReaderWindow(QWidget):
         self.lock_reader_action.setChecked(self.reader_locked)
         self.show_reader_toast("阅读器已锁定" if self.reader_locked else "阅读器已解锁")
 
+    def request_colorize_current_chapter(self) -> None:
+        """请求上色当前本地章节；完成后由 colorize_result_ready 切换到上色版。"""
+        if self._closed:
+            return
+        if self.pdf_path is not None or not self.current_chapter_dir:
+            self.show_reader_toast("当前章节是在线或 PDF 内容，暂不支持上色", 2400)
+            return
+        source_dir = Path(self.current_chapter_dir)
+        if source_dir.name == "上色版":
+            self.show_reader_toast("当前已经在看上色版", 2000)
+            return
+        title = self.current_chapter_title or self.windowTitle()
+        self.colorize_action.setEnabled(False)
+        self.status_label.setText("AI 上色中，完成后自动切换…")
+        self.colorize_requested.emit(title, source_dir)
+
+    def open_colorized_result(self, source_dir: Path) -> None:
+        """上色完成后切到“上色版”目录（仍在本阅读器窗口内）。"""
+        if self._closed:
+            return
+        self.colorize_action.setEnabled(True)
+        colorized = source_dir / "上色版"
+        if not colorized.is_dir():
+            self.show_reader_toast("上色结果目录不存在", 2200)
+            return
+        self.current_chapter_title = f"{self.current_chapter_title or ''}（上色版）".strip("（） ")
+        paths = collect_reader_images(colorized)
+        if not paths:
+            self.show_reader_toast("上色结果为空", 2200)
+            return
+        self.start_decode_image_paths(paths)
+        self.status_label.setText("AI 上色版")
+        self.show_reader_toast("已切换到上色版", 1800)
+
     def start_decode_image_paths(self, paths: Iterable[Path]) -> None:
         if not self._local_chapter_switching:
             self.local_chapters = []
@@ -929,6 +970,12 @@ class HdMangaReaderWindow(QWidget):
             return
         self.update_loaded_status()
         self.image_paths = {index: path for index, path in enumerate(image_paths, start=1)}
+        first = image_paths[0].resolve()
+        chapter_dir = next((d for d in (self.current_chapter_dir,) if d), None)
+        if chapter_dir is None:
+            common = os.path.commonpath([str(p) for p in image_paths])
+            chapter_dir = Path(common)
+        self.current_chapter_dir = chapter_dir
         default_size = (1600, 2200)
         for index, path in enumerate(image_paths, start=1):
             key = str(path.resolve())
@@ -976,6 +1023,7 @@ class HdMangaReaderWindow(QWidget):
         self._local_chapter_switching = True
         try:
             paths = collect_reader_images(directory)
+            self.current_chapter_title = title
             self.start_decode_image_paths(paths)
             self.local_chapter_dirs = chapters
             self.status_label.setText(f"本地章节：{title}")
@@ -1015,6 +1063,7 @@ class HdMangaReaderWindow(QWidget):
         chapters = list(self.local_chapters)
         title, paths, _ = self.local_chapters[index]
         self._local_chapter_switching = True
+        self.current_chapter_title = title
         try:
             self.start_decode_image_paths(paths)
             self.local_chapters = chapters
@@ -1379,6 +1428,7 @@ class HdMangaReaderWindow(QWidget):
 
     def reset_reader_state(self) -> None:
         self._chapter_generation += 1
+        self.current_chapter_dir = None
         for worker in list(self.decode_workers):
             if worker.isRunning():
                 worker.requestInterruption()

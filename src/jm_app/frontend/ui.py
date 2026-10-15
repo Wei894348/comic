@@ -84,6 +84,7 @@ from .feed_scroll_bar import (
     FeedScrollBar,
 )
 from .lazy_cover_label import LazyCoverLabel
+from .colorize_actions import ColorizeUIMixin, colorize_effective_settings
 from .lifecycle import LifecycleController
 from .state_persistence import StatePersistenceMixin
 from .pages import (
@@ -250,6 +251,7 @@ class MainWindow(
     CommentsPageMixin,
     WeeklyPageMixin,
     NavigationPageMixin,
+    ColorizeUIMixin,
     QMainWindow,
 ):
     async_log = Signal(str)
@@ -2791,6 +2793,7 @@ class MainWindow(
         require(QPushButton, "browserVerifyButton").clicked.connect(self.open_cookie_verifier)
         self.setup_network_settings_panel(panel)
         self.apply_saved_settings()
+        self.setup_colorize()
         self.update_cache_path_label()
         return panel
 
@@ -5575,6 +5578,7 @@ class MainWindow(
         menu = QMenu(self)
         read_action = menu.addAction("阅读")
         locate_action = menu.addAction("打开位置")
+        self.append_history_context_colorize_action(menu, index)
         menu.addSeparator()
         delete_action = menu.addAction("删除记录")
         delete_action.setObjectName("dangerAction")
@@ -5946,6 +5950,7 @@ class MainWindow(
         if album is not None:
             reader.album = copy.deepcopy(album)
         reader.download_requested.connect(lambda album, source_reader=reader: self.on_reader_download_requested(album, source_reader))
+        self.bind_reader_colorize(reader)
         if album is not None:
             self.reader_controller.bind(reader, copy.deepcopy(album))
 

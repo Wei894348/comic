@@ -16,6 +16,7 @@
      <addaction name="actionZoomIn"/>
      <addaction name="actionDownloadAlbum"/>
      <addaction name="actionFitWidth"/>
+     <addaction name="actionColorize"/>
      <addaction name="actionLockReader"/>
     </widget>
    </item>
@@ -91,6 +92,10 @@
    <property name="checkable"><bool>true</bool></property>
    <property name="text"><string></string></property>
    <property name="toolTip"><string>锁定阅读器</string></property>
+  </action>
+  <action name="actionColorize">
+   <property name="text"><string>AI 上色</string></property>
+   <property name="toolTip"><string>AI 上色本章并重新加载</string></property>
   </action>
  </widget>
  <resources/>

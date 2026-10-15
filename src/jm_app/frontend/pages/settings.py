@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ...backend.colorize_service import colorize_settings_defaults
 from ...backend.constants import DEFAULT_USER_AGENT
 from ...backend.cookie_store import (
     clear_cookie_store,
@@ -173,6 +174,40 @@ class SettingsPageMixin:
         root.addWidget(self.route_speed_table)
         form.insertRow(0, group)
 
+        # ---- AI 上色 ----
+        colorize_group = QGroupBox("漫画上色", panel)
+        colorize_group.setObjectName("colorizeGroup")
+        colorize_root = QVBoxLayout(colorize_group)
+        colorize_root.setContentsMargins(16, 18, 16, 16)
+        colorize_root.setSpacing(12)
+        colorize_form = QFormLayout()
+        colorize_form.setHorizontalSpacing(18)
+        colorize_form.setVerticalSpacing(10)
+        colorize_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
+        defaults = colorize_settings_defaults()
+        self.colorize_size_combo = QComboBox(colorize_group)
+        for text, value in (("576（快）", 576), ("768（较细）", 768), ("1024（最细，很慢）", 1024)):
+            self.colorize_size_combo.addItem(text, value)
+        self.colorize_denoise_box = QCheckBox("上色前先去噪（扫点较脏的稿子勾选）", colorize_group)
+        self.colorize_model_edit = QLineEdit(colorize_group)
+        self.colorize_model_edit.setText(str(defaults["colorize_model_dir"]))
+        self.colorize_python_edit = QLineEdit(colorize_group)
+        self.colorize_python_edit.setText(str(defaults["colorize_python"]))
+        colorize_form.addRow("处理精度", self.colorize_size_combo)
+        colorize_form.addRow("去噪", self.colorize_denoise_box)
+        colorize_form.addRow("模型目录", self.colorize_model_edit)
+        colorize_form.addRow("上色 Python", self.colorize_python_edit)
+        colorize_root.addLayout(colorize_form)
+        colorize_status = QLabel(
+            "上色基于 manga-colorization-v2（CPU 运行）。输出的“上色版”目录与原图并排存放，原图不动。",
+            colorize_group,
+        )
+        colorize_status.setObjectName("colorizeStatus")
+        colorize_status.setWordWrap(True)
+        colorize_root.addWidget(colorize_status)
+        form.insertRow(1, colorize_group)
+
         legacy_proxy_label = panel.findChild(QLabel, "proxyLabel")
         if legacy_proxy_label is not None:
             legacy_proxy_label.hide()
@@ -186,6 +221,10 @@ class SettingsPageMixin:
             "QGroupBox#networkRouteGroup{background:#fff;border:1px solid #dfe5ec;"
             "border-radius:7px;margin-top:12px;font-weight:800;}"
             "QGroupBox#networkRouteGroup::title{subcontrol-origin:margin;left:12px;padding:0 5px;}"
+            "QGroupBox#colorizeGroup{background:#fff;border:1px solid #dfe5ec;"
+            "border-radius:7px;margin-top:12px;font-weight:800;}"
+            "QGroupBox#colorizeGroup::title{subcontrol-origin:margin;left:12px;padding:0 5px;}"
+            "QLabel#colorizeStatus{color:#667085;}"
             "QLabel#routeSpeedStatus{color:#667085;}"
             "QTableWidget{background:#fff;border:1px solid #e0e5eb;border-radius:6px;gridline-color:#edf0f3;}"
         )
@@ -301,6 +340,15 @@ class SettingsPageMixin:
                 }
             )
         snapshot["api_route"] = getattr(self, "api_route", 0)
+        if hasattr(self, "colorize_size_combo"):
+            snapshot.update(
+                {
+                    "colorize_size": int(self.colorize_size_combo.currentData() or 576),
+                    "colorize_denoise": self.colorize_denoise_box.isChecked(),
+                    "colorize_model_dir": self.colorize_model_edit.text().strip(),
+                    "colorize_python": self.colorize_python_edit.text().strip(),
+                }
+            )
         snapshot["theme_dark"] = bool(getattr(self, "theme_dark", False))
         snapshot["sidebar_collapsed"] = bool(
             getattr(self, "navigation_collapsed", False)
@@ -597,6 +645,27 @@ class SettingsPageMixin:
             self.stop_on_block.setChecked(
                 bool(self.settings_cache.get("stop_on_block", True))
             )
+            if hasattr(self, "colorize_size_combo"):
+                defaults = colorize_settings_defaults()
+                size_index = self.colorize_size_combo.findData(
+                    int(self.settings_cache.get("colorize_size", 576))
+                )
+                self.colorize_size_combo.setCurrentIndex(size_index if size_index >= 0 else 0)
+                self.colorize_denoise_box.setChecked(
+                    bool(self.settings_cache.get("colorize_denoise", False))
+                )
+                self.colorize_model_edit.setText(
+                    str(
+                        self.settings_cache.get("colorize_model_dir")
+                        or defaults["colorize_model_dir"]
+                    )
+                )
+                self.colorize_python_edit.setText(
+                    str(
+                        self.settings_cache.get("colorize_python")
+                        or defaults["colorize_python"]
+                    )
+                )
         finally:
             self._applying_settings = False
         self.persist_download_root()
@@ -628,6 +697,8 @@ class SettingsPageMixin:
             getattr(self, "doh_url_edit", None),
             getattr(self, "custom_api_domain_edit", None),
             getattr(self, "custom_image_domain_edit", None),
+            getattr(self, "colorize_model_edit", None),
+            getattr(self, "colorize_python_edit", None),
         ]
         for edit in edits:
             if edit is not None:
@@ -661,6 +732,12 @@ class SettingsPageMixin:
             combo.currentIndexChanged.connect(self.apply_network_route_selection)
         if hasattr(self, "doh_enabled_box"):
             self.doh_enabled_box.toggled.connect(self.schedule_settings_save)
+        if hasattr(self, "colorize_denoise_box"):
+            self.colorize_denoise_box.toggled.connect(self.schedule_settings_save)
+        if hasattr(self, "colorize_size_combo"):
+            self.colorize_size_combo.currentIndexChanged.connect(
+                self.schedule_settings_save
+            )
         for edit in (
             getattr(self, "custom_api_domain_edit", None),
             getattr(self, "custom_image_domain_edit", None),
